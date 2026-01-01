@@ -8,49 +8,33 @@
   </head>
   <body>
     <div class="container">
-      <header>
-        <h1>Claude Blocker</h1>
-        <div class="status" id="status">
+      <div class="header">
+        <div class="status-row">
           <span class="status-dot" id="status-dot"></span>
-          <span id="status-text">Connecting...</span>
+          <span class="status-label" id="status-text">Connecting</span>
         </div>
-      </header>
+        <div class="block-badge" id="block-badge">
+          <span id="block-status">—</span>
+        </div>
+      </div>
 
-      <section class="stats">
+      <div class="stats">
         <div class="stat">
           <span class="stat-value" id="sessions">0</span>
-          <span class="stat-label">Sessions</span>
+          <span class="stat-label">sessions</span>
         </div>
         <div class="stat">
           <span class="stat-value" id="working">0</span>
-          <span class="stat-label">Working</span>
+          <span class="stat-label">working</span>
         </div>
-        <div class="stat">
-          <span class="stat-value" id="blocked-status">-</span>
-          <span class="stat-label">Sites</span>
-        </div>
-      </section>
+      </div>
 
-      <section class="bypass-section">
-        <button id="bypass-btn" class="bypass-btn" disabled>
-          Emergency Bypass (5 min)
-        </button>
-        <p class="bypass-note" id="bypass-note">1 bypass per day</p>
-      </section>
-
-      <section class="domains-section">
-        <h2>Blocked Domains</h2>
-        <ul class="domain-list" id="domain-list">
-          <li>x.com</li>
-          <li>twitter.com</li>
-        </ul>
-      </section>
-
-      <footer>
-        <a href="https://github.com/anthropic/claude-blocker" target="_blank"
-          >GitHub</a
-        >
-      </footer>
+      <button class="settings-btn" id="settings-btn">
+        Settings
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9,18 15,12 9,6"/>
+        </svg>
+      </button>
     </div>
 
     <script src="popup.global.js"></script>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Blocker Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+
+    <div class="container">
+      <!-- Header -->
+      <header>
+        <div class="brand">
+          <div class="logo-mark">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="11" width="18" height="11" rx="2" fill="#FFD700" stroke="#B8860B" stroke-width="0.5"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#666" stroke-width="1.5" fill="none"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1>Claude Blocker</h1>
+            <span class="version">v1.0.0</span>
+          </div>
+        </div>
+
+        <div class="status-badge" id="status-badge">
+          <span class="status-indicator" id="status-indicator"></span>
+          <span id="status-text">Connecting...</span>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main>
+        <!-- Stats Cards -->
+        <section class="stats-section">
+          <div class="stat-card">
+            <span class="stat-value" id="sessions">0</span>
+            <span class="stat-label">Sessions</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="working">0</span>
+            <span class="stat-label">Working</span>
+          </div>
+          <div class="stat-card" id="blocking-card">
+            <span class="stat-value" id="block-status">—</span>
+            <span class="stat-label">Status</span>
+          </div>
+        </section>
+
+        <!-- Blocked Sites Section -->
+        <section class="sites-section">
+          <div class="section-header">
+            <div class="section-title">
+              <h2>Blocked Sites</h2>
+              <p class="section-desc">These sites will be blocked when Claude Code is idle</p>
+            </div>
+            <span class="site-count" id="site-count">0</span>
+          </div>
+
+          <!-- Add Domain Form -->
+          <form class="add-form" id="add-form">
+            <div class="input-wrapper">
+              <input
+                type="text"
+                id="domain-input"
+                placeholder="example.com"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <kbd class="input-hint">Enter</kbd>
+            </div>
+            <button type="submit" class="add-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span>Add Site</span>
+            </button>
+          </form>
+
+          <!-- Domain List -->
+          <ul class="domain-list" id="domain-list">
+            <!-- Populated by JS -->
+          </ul>
+        </section>
+
+        <!-- Bypass Section -->
+        <section class="bypass-section">
+          <div class="section-header">
+            <div class="section-title">
+              <h2>Emergency Bypass</h2>
+              <p class="section-desc">Get 5 minutes of unblocked access (once per day)</p>
+            </div>
+          </div>
+
+          <button class="bypass-btn" id="bypass-btn" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12,6 12,12 16,14"/>
+            </svg>
+            <span id="bypass-text">Activate Bypass</span>
+          </button>
+          <p class="bypass-status" id="bypass-status">Loading...</p>
+        </section>
+      </main>
+
+      <!-- Footer -->
+      <footer>
+        <p>Made for focus. Block distractions when Claude is idle.</p>
+      </footer>
+    </div>
+
+    <script src="options.global.js"></script>
+  </body>
+</html>

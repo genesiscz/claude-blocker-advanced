@@ -1,3 +1,5 @@
+export {};
+
 const WS_URL = "ws://localhost:8765/ws";
 const KEEPALIVE_INTERVAL = 20_000;
 const RECONNECT_BASE_DELAY = 1_000;

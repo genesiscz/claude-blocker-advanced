@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/service-worker.ts src/content-script.ts src/popup.ts --format iife --out-dir dist --clean && cp src/popup.html src/popup.css manifest.json dist/",
+    "build": "tsup src/service-worker.ts src/content-script.ts src/popup.ts src/options.ts --format iife --out-dir dist --clean && node scripts/generate-icons.mjs && cp src/popup.html src/popup.css src/options.html src/options.css manifest.json dist/",
     "dev": "pnpm build --watch",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
+    "sharp": "^0.34.5",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   }

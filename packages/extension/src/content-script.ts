@@ -1,5 +1,7 @@
+export {};
+
 const MODAL_ID = "claude-blocker-modal";
-const BLOCKED_DOMAINS = ["x.com", "twitter.com", "t3.gg"];
+const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
 
 // State shape from service worker
 interface PublicState {
@@ -13,10 +15,24 @@ interface PublicState {
 // Track current state so we can re-render if modal gets removed
 let lastKnownState: PublicState | null = null;
 let shouldBeBlocked = false;
+let blockedDomains: string[] = [];
+
+// Load domains from storage
+function loadDomains(): Promise<string[]> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["blockedDomains"], (result) => {
+      if (result.blockedDomains && Array.isArray(result.blockedDomains)) {
+        resolve(result.blockedDomains);
+      } else {
+        resolve(DEFAULT_DOMAINS);
+      }
+    });
+  });
+}
 
 function isBlockedDomain(): boolean {
   const hostname = window.location.hostname.replace(/^www\./, "");
-  return BLOCKED_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+  return blockedDomains.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }
 
 function getModal(): HTMLElement | null {
@@ -213,11 +229,24 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
     handleState(message);
   }
+  if (message.type === "DOMAINS_UPDATED") {
+    blockedDomains = message.domains;
+    // Re-evaluate if we should be blocked
+    if (lastKnownState) {
+      handleState(lastKnownState);
+    }
+  }
 });
 
-// Start
-if (isBlockedDomain()) {
-  setupMutationObserver();
-  createModal();
-  requestState();
+// Initialize
+async function init(): Promise<void> {
+  blockedDomains = await loadDomains();
+
+  if (isBlockedDomain()) {
+    setupMutationObserver();
+    createModal();
+    requestState();
+  }
 }
+
+init();
