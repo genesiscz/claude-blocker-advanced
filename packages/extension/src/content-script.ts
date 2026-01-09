@@ -2,23 +2,53 @@ export {};
 
 const MODAL_ID = "claude-blocker-modal";
 const TOAST_ID = "claude-blocker-toast";
+const OVERLAY_ID = "claude-blocker-overlay";
 const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
+
+// Session type from service worker
+interface Session {
+  id: string;
+  status: "idle" | "working" | "waiting_for_input";
+  projectName: string;
+  startTime: string;
+  lastTool?: string;
+  waitingForInputSince?: string;
+}
 
 // State shape from service worker
 interface PublicState {
   serverConnected: boolean;
-  sessions: number;
+  sessions: Session[];
+  sessionCount: number;
   working: number;
   waitingForInput: number;
   blocked: boolean;
   bypassActive: boolean;
 }
 
-// Track current state so we can re-render if modal gets removed
+// Overlay config from storage
+interface OverlayConfig {
+  enabled: boolean;
+  scope: "all" | "blocked" | "none";
+  style: "pill" | "sidebar" | "dot";
+  position: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  opacity: number;
+}
+
+const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
+  enabled: true,
+  scope: "all",
+  style: "pill",
+  position: "top-right",
+  opacity: 0.9,
+};
+
+// Track current state
 let lastKnownState: PublicState | null = null;
 let shouldBeBlocked = false;
 let blockedDomains: string[] = [];
 let toastDismissed = false;
+let overlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 
 // Load domains from storage
 function loadDomains(): Promise<string[]> {
@@ -33,10 +63,35 @@ function loadDomains(): Promise<string[]> {
   });
 }
 
+// Load overlay config from storage
+function loadOverlayConfig(): Promise<OverlayConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["overlayConfig"], (result) => {
+      if (result.overlayConfig) {
+        resolve({ ...DEFAULT_OVERLAY_CONFIG, ...result.overlayConfig });
+      } else {
+        resolve(DEFAULT_OVERLAY_CONFIG);
+      }
+    });
+  });
+}
+
 function isBlockedDomain(): boolean {
   const hostname = window.location.hostname.replace(/^www\./, "");
   return blockedDomains.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }
+
+// Format duration
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
+// ============ BLOCKING MODAL ============
 
 function getModal(): HTMLElement | null {
   return document.getElementById(MODAL_ID);
@@ -53,7 +108,6 @@ function createModal(): void {
   container.id = MODAL_ID;
   const shadow = container.attachShadow({ mode: "open" });
 
-  // Use inline styles with bulletproof Arial font (won't change when page loads custom fonts)
   shadow.innerHTML = `
     <div style="all:initial;position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;z-index:2147483647;-webkit-font-smoothing:antialiased;">
       <div style="all:initial;background:#1a1a1a;border:1px solid #333;border-radius:16px;padding:40px;max-width:480px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;">
@@ -78,7 +132,6 @@ function createModal(): void {
   // Wire up bypass button
   const bypassBtn = shadow.getElementById("bypass-btn");
   if (bypassBtn) {
-    // Check if already used today
     chrome.runtime.sendMessage({ type: "GET_BYPASS_STATUS" }, (status) => {
       if (status?.usedToday) {
         bypassBtn.textContent = "Bypass already used today";
@@ -101,7 +154,6 @@ function createModal(): void {
       });
     });
 
-    // Hover effect
     bypassBtn.addEventListener("mouseenter", () => {
       if (!(bypassBtn as HTMLButtonElement).disabled) {
         bypassBtn.style.background = "#444";
@@ -114,13 +166,14 @@ function createModal(): void {
     });
   }
 
-  // Mount to documentElement (html) instead of body - more resilient to React hydration
   document.documentElement.appendChild(container);
 }
 
 function removeModal(): void {
   getModal()?.remove();
 }
+
+// ============ TOAST NOTIFICATION ============
 
 function getToast(): HTMLElement | null {
   return document.getElementById(TOAST_ID);
@@ -134,7 +187,7 @@ function showToast(): void {
   const shadow = container.attachShadow({ mode: "open" });
 
   shadow.innerHTML = `
-    <div style="all:initial;position:fixed;bottom:24px;right:24px;background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:16px 20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#fff;z-index:2147483647;display:flex;align-items:center;gap:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);-webkit-font-smoothing:antialiased;">
+    <div style="all:initial;position:fixed;bottom:24px;right:24px;background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:16px 20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#fff;z-index:2147483646;display:flex;align-items:center;gap:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);-webkit-font-smoothing:antialiased;">
       <span style="font-size:18px;">💬</span>
       <span>Claude has a question for you!</span>
       <button id="dismiss" style="all:initial;margin-left:8px;padding:4px 8px;background:#333;border:none;border-radius:6px;color:#888;font-family:Arial,Helvetica,sans-serif;font-size:12px;cursor:pointer;">Dismiss</button>
@@ -154,23 +207,149 @@ function removeToast(): void {
   getToast()?.remove();
 }
 
-// Watch for our modal being removed by the page and re-add it
-function setupMutationObserver(): void {
-  const observer = new MutationObserver(() => {
-    if (shouldBeBlocked && !getModal()) {
-      // Modal was removed but should exist - re-create it
-      createModal();
-      if (lastKnownState) {
-        renderState(lastKnownState);
-      }
-    }
-  });
+// ============ MINI OVERLAY ============
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+function getOverlay(): HTMLElement | null {
+  return document.getElementById(OVERLAY_ID);
 }
+
+function shouldShowOverlay(): boolean {
+  if (!overlayConfig.enabled) return false;
+  if (overlayConfig.scope === "none") return false;
+  if (overlayConfig.scope === "blocked" && !isBlockedDomain()) return false;
+  return true;
+}
+
+function getPositionStyles(): string {
+  const pos = overlayConfig.position;
+  const margin = "16px";
+  switch (pos) {
+    case "top-left":
+      return `top:${margin};left:${margin};`;
+    case "top-right":
+      return `top:${margin};right:${margin};`;
+    case "bottom-left":
+      return `bottom:${margin};left:${margin};`;
+    case "bottom-right":
+      return `bottom:${margin};right:${margin};`;
+    default:
+      return `top:${margin};right:${margin};`;
+  }
+}
+
+function createOverlay(): void {
+  if (getOverlay()) return;
+
+  const container = document.createElement("div");
+  container.id = OVERLAY_ID;
+  const shadow = container.attachShadow({ mode: "open" });
+
+  shadow.innerHTML = `
+    <style>
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+      .overlay { all: initial; position: fixed; ${getPositionStyles()} z-index: 2147483645; font-family: Arial, Helvetica, sans-serif; opacity: ${overlayConfig.opacity}; }
+      .pill { background: #1a1a1a; border: 1px solid #333; border-radius: 20px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+      .pill:hover { background: #222; border-color: #444; }
+      .pill:hover .sessions-list { display: block; }
+      .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .status-dot.working { background: #30d158; box-shadow: 0 0 6px #30d158; }
+      .status-dot.waiting { background: #ffd60a; box-shadow: 0 0 6px #ffd60a; animation: pulse 1.5s ease-in-out infinite; }
+      .status-dot.idle { background: #666; }
+      .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
+      .label { color: #999; font-size: 12px; font-weight: 500; }
+      .sessions-list { display: none; position: absolute; top: 100%; ${overlayConfig.position.includes("right") ? "right" : "left"}: 0; margin-top: 8px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 200px; max-width: 280px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+      .session-item { padding: 10px 12px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 8px; }
+      .session-item:last-child { border-bottom: none; }
+      .session-name { flex: 1; color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .session-info { color: #666; font-size: 11px; }
+      .session-wait { color: #ffd60a; font-size: 10px; margin-left: 4px; }
+      .no-sessions { padding: 16px; text-align: center; color: #666; font-size: 12px; }
+    </style>
+    <div class="overlay">
+      <div class="pill">
+        <span class="status-dot" id="overlay-dot"></span>
+        <span class="label" id="overlay-label">—</span>
+        <div class="sessions-list" id="overlay-sessions"></div>
+      </div>
+    </div>
+  `;
+
+  document.documentElement.appendChild(container);
+}
+
+function removeOverlay(): void {
+  getOverlay()?.remove();
+}
+
+function updateOverlay(state: PublicState): void {
+  if (!shouldShowOverlay()) {
+    removeOverlay();
+    return;
+  }
+
+  if (!getOverlay()) {
+    createOverlay();
+  }
+
+  const shadow = getOverlay()?.shadowRoot;
+  if (!shadow) return;
+
+  const dot = shadow.getElementById("overlay-dot");
+  const label = shadow.getElementById("overlay-label");
+  const sessionsList = shadow.getElementById("overlay-sessions");
+  if (!dot || !label || !sessionsList) return;
+
+  // Update status dot
+  if (!state.serverConnected) {
+    dot.className = "status-dot offline";
+    label.textContent = "Offline";
+  } else if (state.working > 0) {
+    dot.className = "status-dot working";
+    label.textContent = `${state.working} working`;
+  } else if (state.waitingForInput > 0) {
+    dot.className = "status-dot waiting";
+    label.textContent = "Waiting";
+  } else if (state.sessionCount > 0) {
+    dot.className = "status-dot idle";
+    label.textContent = `${state.sessionCount} idle`;
+  } else {
+    dot.className = "status-dot idle";
+    label.textContent = "No sessions";
+  }
+
+  // Update sessions list
+  if (state.sessions.length === 0) {
+    sessionsList.innerHTML = '<div class="no-sessions">No active sessions</div>';
+  } else {
+    const now = Date.now();
+    const sorted = [...state.sessions].sort((a, b) => {
+      const order = { working: 0, waiting_for_input: 1, idle: 2 };
+      return order[a.status] - order[b.status];
+    });
+
+    sessionsList.innerHTML = sorted
+      .map((s) => {
+        const uptime = formatDuration(now - new Date(s.startTime).getTime());
+        let waitHtml = "";
+        if (s.status === "waiting_for_input" && s.waitingForInputSince) {
+          const waitTime = formatDuration(now - new Date(s.waitingForInputSince).getTime());
+          waitHtml = `<span class="session-wait">⏳ ${waitTime}</span>`;
+        }
+        const dotClass =
+          s.status === "working" ? "working" : s.status === "waiting_for_input" ? "waiting" : "idle";
+        return `
+          <div class="session-item">
+            <span class="status-dot ${dotClass}"></span>
+            <span class="session-name">${s.projectName}</span>
+            <span class="session-info">${uptime}${waitHtml}</span>
+          </div>
+        `;
+      })
+      .join("");
+  }
+}
+
+// ============ MODAL STATE RENDERING ============
 
 function setDotColor(dot: HTMLElement, color: "green" | "red" | "gray"): void {
   const colors = {
@@ -196,7 +375,7 @@ function renderState(state: PublicState): void {
     setDotColor(dot, "red");
     status.textContent = "Server Offline";
     hint.innerHTML = `Run <span style="background:#2a2a2a;padding:2px 8px;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;">npx claude-blocker</span> to start`;
-  } else if (state.sessions === 0) {
+  } else if (state.sessionCount === 0) {
     message.textContent = "No Claude Code sessions detected.";
     setDotColor(dot, "green");
     status.textContent = "Waiting for Claude Code";
@@ -204,7 +383,7 @@ function renderState(state: PublicState): void {
   } else {
     message.textContent = "Your job finished!";
     setDotColor(dot, "green");
-    status.textContent = `${state.sessions} session${state.sessions > 1 ? "s" : ""} idle`;
+    status.textContent = `${state.sessionCount} session${state.sessionCount > 1 ? "s" : ""} idle`;
     hint.textContent = "Type a prompt in Claude Code to unblock";
   }
 }
@@ -225,9 +404,31 @@ function renderError(): void {
   hint.textContent = "Try reloading the extension";
 }
 
-// Handle state updates from service worker
+// ============ MUTATION OBSERVER ============
+
+function setupMutationObserver(): void {
+  const observer = new MutationObserver(() => {
+    if (shouldBeBlocked && !getModal()) {
+      createModal();
+      if (lastKnownState) {
+        renderState(lastKnownState);
+      }
+    }
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+}
+
+// ============ STATE HANDLING ============
+
 function handleState(state: PublicState): void {
   lastKnownState = state;
+
+  // Always update overlay (respects its own scope settings)
+  updateOverlay(state);
 
   if (!isBlockedDomain()) {
     shouldBeBlocked = false;
@@ -240,7 +441,7 @@ function handleState(state: PublicState): void {
   if (state.waitingForInput > 0) {
     showToast();
   } else {
-    toastDismissed = false; // Reset so next question can show toast
+    toastDismissed = false;
     removeToast();
   }
 
@@ -255,43 +456,61 @@ function handleState(state: PublicState): void {
   }
 }
 
-// Request state from service worker
 function requestState(): void {
   chrome.runtime.sendMessage({ type: "GET_STATE" }, (response) => {
     if (chrome.runtime.lastError || !response) {
-      // Service worker not ready, retry
       setTimeout(requestState, 500);
-      createModal();
-      renderError();
+      if (isBlockedDomain()) {
+        createModal();
+        renderError();
+      }
       return;
     }
     handleState(response);
   });
 }
 
-// Listen for broadcasts from service worker
+// ============ MESSAGE LISTENERS ============
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
     handleState(message);
   }
   if (message.type === "DOMAINS_UPDATED") {
     blockedDomains = message.domains;
-    // Re-evaluate if we should be blocked
     if (lastKnownState) {
       handleState(lastKnownState);
     }
   }
+  if (message.type === "OVERLAY_CONFIG_UPDATED") {
+    overlayConfig = { ...DEFAULT_OVERLAY_CONFIG, ...message.config };
+    removeOverlay(); // Recreate with new config
+    if (lastKnownState) {
+      updateOverlay(lastKnownState);
+    }
+  }
 });
 
-// Initialize
+// ============ INITIALIZATION ============
+
 async function init(): Promise<void> {
   blockedDomains = await loadDomains();
+  overlayConfig = await loadOverlayConfig();
+
+  // Always set up state listener and request state for overlay
+  requestState();
 
   if (isBlockedDomain()) {
     setupMutationObserver();
     createModal();
-    requestState();
   }
+
+  // Refresh overlay periodically to update times
+  setInterval(() => {
+    if (lastKnownState) {
+      updateOverlay(lastKnownState);
+    }
+  }, 1000);
 }
 
 init();
