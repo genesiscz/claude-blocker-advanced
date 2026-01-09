@@ -192,7 +192,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 8: Token Tracking
-**Status: Planned**
+**Status: Done (infrastructure ready, awaiting Claude Code hook data)**
 
 ### Per-Session Tokens
 - [ ] Track input/output tokens (requires hook enhancement)
