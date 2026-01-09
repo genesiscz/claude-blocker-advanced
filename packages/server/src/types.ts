@@ -1,48 +1,26 @@
-// Hook event payload (from Claude Code)
-export interface HookPayload {
-  session_id: string;
-  hook_event_name:
-    | "UserPromptSubmit"
-    | "PreToolUse"
-    | "Stop"
-    | "SessionStart"
-    | "SessionEnd";
-  tool_name?: string;
-  tool_input?: Record<string, unknown>;
-  cwd?: string;
-  transcript_path?: string;
-}
+// Re-export shared types
+export type {
+  HookPayload,
+  Session,
+  ServerMessage,
+  ClientMessage,
+} from "@claude-blocker/shared";
 
-// Session state tracked by server
-export interface Session {
+export {
+  DEFAULT_PORT,
+  SESSION_TIMEOUT_MS,
+  USER_INPUT_TOOLS,
+} from "@claude-blocker/shared";
+
+// Internal session state (with Date objects for easier manipulation)
+export interface InternalSession {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
-  lastActivity: Date;
-  waitingForInputSince?: Date;
+  projectName: string;
   cwd?: string;
+  startTime: Date;
+  lastActivity: Date;
+  lastTool?: string;
+  toolCount: number;
+  waitingForInputSince?: Date;
 }
-
-// WebSocket messages from server to extension
-export type ServerMessage =
-  | {
-      type: "state";
-      blocked: boolean;
-      sessions: number;
-      working: number;
-      waitingForInput: number;
-    }
-  | { type: "pong" };
-
-// Tools that indicate Claude is waiting for user input
-export const USER_INPUT_TOOLS = [
-  "AskUserQuestion",
-  "ask_user",
-  "ask_human",
-];
-
-// WebSocket messages from extension to server
-export type ClientMessage = { type: "ping" } | { type: "subscribe" };
-
-// Server configuration
-export const DEFAULT_PORT = 8765;
-export const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
