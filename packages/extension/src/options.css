@@ -637,14 +637,19 @@ section {
   color: var(--text-muted);
 }
 
-/* Overlay Settings Section */
-.overlay-section .settings-group {
+/* Settings Group (shared between overlay and notifications) */
+.settings-group {
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
 }
 
+.notifications-section .settings-group {
+  margin-bottom: 0;
+}
+
+/* Toggle Row */
 .toggle-row {
   display: flex;
   align-items: center;
@@ -660,6 +665,11 @@ section {
 .toggle-row:hover {
   background: var(--bg-hover);
   border-color: var(--border-default);
+}
+
+.toggle-row.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .toggle-label {
@@ -702,6 +712,23 @@ section {
 .toggle-row input[type="checkbox"]:checked + .toggle-switch::after {
   left: 22px;
   background: #fff;
+}
+
+/* Sub-toggle styling */
+.toggle-row.sub-toggle {
+  margin-left: 24px;
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+
+.toggle-row.sub-toggle:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+
+.toggle-row.sub-toggle .toggle-label {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .setting-row {
@@ -1090,5 +1117,9 @@ footer p {
 
   .filter-dropdown select {
     width: 100%;
+  }
+
+  .toggle-row.sub-toggle {
+    margin-left: 12px;
   }
 }

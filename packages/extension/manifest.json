@@ -11,7 +11,7 @@
     "48": "icon-48.png",
     "128": "icon-128.png"
   },
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "notifications"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "service-worker.global.js"

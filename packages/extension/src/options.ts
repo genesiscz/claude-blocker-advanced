@@ -38,6 +38,13 @@ interface OverlayConfig {
   opacity: number;
 }
 
+interface NotificationConfig {
+  enabled: boolean;
+  onWaiting: boolean;
+  onFinished: boolean;
+  onDisconnected: boolean;
+}
+
 type SortMode = "status" | "project" | "activity" | "uptime";
 
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
@@ -46,6 +53,13 @@ const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   style: "pill",
   position: "top-right",
   opacity: 0.9,
+};
+
+const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  enabled: true,
+  onWaiting: true,
+  onFinished: true,
+  onDisconnected: true,
 };
 
 // Elements
@@ -75,6 +89,12 @@ const overlayOpacity = document.getElementById("overlay-opacity") as HTMLInputEl
 const opacityValue = document.getElementById("opacity-value") as HTMLElement;
 const overlayPreview = document.getElementById("overlay-preview") as HTMLElement;
 
+// Notification settings elements
+const notificationsEnabled = document.getElementById("notifications-enabled") as HTMLInputElement;
+const notifyWaiting = document.getElementById("notify-waiting") as HTMLInputElement;
+const notifyFinished = document.getElementById("notify-finished") as HTMLInputElement;
+const notifyDisconnected = document.getElementById("notify-disconnected") as HTMLInputElement;
+
 // Tab elements
 const tabButtons = document.querySelectorAll(".tab-btn") as NodeListOf<HTMLButtonElement>;
 const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTMLElement>;
@@ -82,6 +102,7 @@ const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTML
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
+let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
 
@@ -131,6 +152,19 @@ async function loadOverlayConfig(): Promise<OverlayConfig> {
   });
 }
 
+// Load notification config from storage
+async function loadNotificationConfig(): Promise<NotificationConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["notificationConfig"], (result) => {
+      if (result.notificationConfig) {
+        resolve({ ...DEFAULT_NOTIFICATION_CONFIG, ...result.notificationConfig });
+      } else {
+        resolve(DEFAULT_NOTIFICATION_CONFIG);
+      }
+    });
+  });
+}
+
 // Save overlay config to storage
 async function saveOverlayConfig(config: OverlayConfig): Promise<void> {
   return new Promise((resolve) => {
@@ -145,6 +179,13 @@ async function saveOverlayConfig(config: OverlayConfig): Promise<void> {
       });
       resolve();
     });
+  });
+}
+
+// Save notification config to storage
+async function saveNotificationConfig(config: NotificationConfig): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ notificationConfig: config }, resolve);
   });
 }
 
@@ -219,7 +260,6 @@ function renderDomains(): void {
 // Sort sessions based on current mode
 function sortSessions(sessions: Session[]): Session[] {
   const sorted = [...sessions];
-  const now = Date.now();
 
   switch (currentSortMode) {
     case "status": {
@@ -320,6 +360,32 @@ function updateOverlaySettingsUI(): void {
   updatePreviewPosition();
 }
 
+// Update notification settings UI
+function updateNotificationSettingsUI(): void {
+  notificationsEnabled.checked = currentNotificationConfig.enabled;
+  notifyWaiting.checked = currentNotificationConfig.onWaiting;
+  notifyFinished.checked = currentNotificationConfig.onFinished;
+  notifyDisconnected.checked = currentNotificationConfig.onDisconnected;
+  updateSubTogglesState();
+}
+
+// Update sub-toggles disabled state based on master toggle
+function updateSubTogglesState(): void {
+  const subToggles = [notifyWaiting, notifyFinished, notifyDisconnected];
+  const enabled = notificationsEnabled.checked;
+
+  for (const toggle of subToggles) {
+    const row = toggle.closest(".toggle-row");
+    if (row) {
+      if (enabled) {
+        row.classList.remove("disabled");
+      } else {
+        row.classList.add("disabled");
+      }
+    }
+  }
+}
+
 // Update preview position based on settings
 function updatePreviewPosition(): void {
   const preview = overlayPreview.querySelector(".preview-overlay") as HTMLElement;
@@ -353,6 +419,19 @@ async function handleOverlayChange(): Promise<void> {
   opacityValue.textContent = `${Math.round(currentOverlayConfig.opacity * 100)}%`;
   updatePreviewPosition();
   await saveOverlayConfig(currentOverlayConfig);
+}
+
+// Handle notification settings changes
+async function handleNotificationChange(): Promise<void> {
+  currentNotificationConfig = {
+    enabled: notificationsEnabled.checked,
+    onWaiting: notifyWaiting.checked,
+    onFinished: notifyFinished.checked,
+    onDisconnected: notifyDisconnected.checked,
+  };
+
+  updateSubTogglesState();
+  await saveNotificationConfig(currentNotificationConfig);
 }
 
 // Add a domain
@@ -537,6 +616,12 @@ overlayScope.addEventListener("change", handleOverlayChange);
 overlayPosition.addEventListener("change", handleOverlayChange);
 overlayOpacity.addEventListener("input", handleOverlayChange);
 
+// Notification settings event listeners
+notificationsEnabled.addEventListener("change", handleNotificationChange);
+notifyWaiting.addEventListener("change", handleNotificationChange);
+notifyFinished.addEventListener("change", handleNotificationChange);
+notifyDisconnected.addEventListener("change", handleNotificationChange);
+
 // Listen for state broadcasts
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
@@ -548,9 +633,11 @@ chrome.runtime.onMessage.addListener((message) => {
 async function init(): Promise<void> {
   currentDomains = await loadDomains();
   currentOverlayConfig = await loadOverlayConfig();
+  currentNotificationConfig = await loadNotificationConfig();
 
   renderDomains();
   updateOverlaySettingsUI();
+  updateNotificationSettingsUI();
   refreshState();
 }
 

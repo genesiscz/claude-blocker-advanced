@@ -13,6 +13,20 @@ interface Session {
   waitingForInputSince?: string;
 }
 
+interface NotificationConfig {
+  enabled: boolean;
+  onWaiting: boolean;
+  onFinished: boolean;
+  onDisconnected: boolean;
+}
+
+const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
+  enabled: true,
+  onWaiting: true,
+  onFinished: true,
+  onDisconnected: true,
+};
+
 const WS_URL = "ws://localhost:8765/ws";
 const KEEPALIVE_INTERVAL = 20_000;
 const RECONNECT_BASE_DELAY = 1_000;
@@ -31,6 +45,13 @@ const state: State = {
   bypassUntil: null,
 };
 
+// Previous state for detecting changes
+let previousSessions: Session[] = [];
+let wasConnected = false;
+
+// Notification config
+let notificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
+
 let websocket: WebSocket | null = null;
 let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -42,6 +63,86 @@ chrome.storage.sync.get(["bypassUntil"], (result) => {
     state.bypassUntil = result.bypassUntil;
   }
 });
+
+// Load notification config from storage on startup
+chrome.storage.sync.get(["notificationConfig"], (result) => {
+  if (result.notificationConfig) {
+    notificationConfig = { ...DEFAULT_NOTIFICATION_CONFIG, ...result.notificationConfig };
+  }
+});
+
+// Listen for notification config updates
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.notificationConfig) {
+    notificationConfig = { ...DEFAULT_NOTIFICATION_CONFIG, ...changes.notificationConfig.newValue };
+  }
+});
+
+// Send Chrome notification
+function sendNotification(title: string, message: string, notificationId?: string): void {
+  if (!notificationConfig.enabled) return;
+
+  chrome.notifications.create(notificationId ?? `claude-blocker-${Date.now()}`, {
+    type: "basic",
+    iconUrl: "icon-128.png",
+    title,
+    message,
+    priority: 1,
+  });
+}
+
+// Check for session state changes and send notifications
+function checkForNotifications(newSessions: Session[]): void {
+  if (!notificationConfig.enabled) return;
+
+  // Create maps for easier lookup
+  const prevMap = new Map(previousSessions.map((s) => [s.id, s]));
+  const newMap = new Map(newSessions.map((s) => [s.id, s]));
+
+  // Check each new session for state changes
+  for (const session of newSessions) {
+    const prev = prevMap.get(session.id);
+
+    // Session became "waiting_for_input"
+    if (
+      notificationConfig.onWaiting &&
+      session.status === "waiting_for_input" &&
+      prev?.status !== "waiting_for_input"
+    ) {
+      sendNotification(
+        "Claude has a question",
+        `${session.projectName} is waiting for your input`,
+        `waiting-${session.id}`
+      );
+    }
+
+    // Session finished working (was working, now idle)
+    if (
+      notificationConfig.onFinished &&
+      session.status === "idle" &&
+      prev?.status === "working"
+    ) {
+      sendNotification(
+        "Claude finished working",
+        `${session.projectName} has completed its task`,
+        `finished-${session.id}`
+      );
+    }
+  }
+
+  // Check for disconnected sessions (was in prev, not in new)
+  if (notificationConfig.onDisconnected) {
+    for (const prev of previousSessions) {
+      if (!newMap.has(prev.id)) {
+        sendNotification(
+          "Session disconnected",
+          `${prev.projectName} has ended`,
+          `disconnected-${prev.id}`
+        );
+      }
+    }
+  }
+}
 
 // Compute derived state
 function getPublicState() {
@@ -88,6 +189,7 @@ function connect() {
     websocket.onopen = () => {
       console.log("[Claude Blocker] Connected");
       state.serverConnected = true;
+      wasConnected = true;
       retryCount = 0;
       startKeepalive();
       broadcast();
@@ -97,8 +199,15 @@ function connect() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "state") {
+          // Check for notifications before updating state
+          const newSessions: Session[] = msg.sessions ?? [];
+          checkForNotifications(newSessions);
+
+          // Update previous sessions for next comparison
+          previousSessions = state.sessions;
+
           // Now receiving full sessions array from server
-          state.sessions = msg.sessions ?? [];
+          state.sessions = newSessions;
           broadcast();
         }
       } catch {}
@@ -106,7 +215,19 @@ function connect() {
 
     websocket.onclose = () => {
       console.log("[Claude Blocker] Disconnected");
+
+      // Send notification if we were previously connected
+      if (wasConnected && notificationConfig.enabled && notificationConfig.onDisconnected) {
+        sendNotification(
+          "Server disconnected",
+          "Claude Blocker server is no longer reachable",
+          "server-disconnected"
+        );
+      }
+
       state.serverConnected = false;
+      wasConnected = false;
+      previousSessions = [];
       stopKeepalive();
       broadcast();
       scheduleReconnect();

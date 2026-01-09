@@ -139,6 +139,42 @@
             </div>
           </section>
 
+          <!-- Notifications Section -->
+          <section class="notifications-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Notifications</h2>
+                <p class="section-desc">Get notified about session events</p>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label class="toggle-row">
+                <span class="toggle-label">Enable notifications</span>
+                <input type="checkbox" id="notifications-enabled" checked />
+                <span class="toggle-switch"></span>
+              </label>
+
+              <label class="toggle-row sub-toggle">
+                <span class="toggle-label">Notify when waiting for input</span>
+                <input type="checkbox" id="notify-waiting" checked />
+                <span class="toggle-switch"></span>
+              </label>
+
+              <label class="toggle-row sub-toggle">
+                <span class="toggle-label">Notify when session finished</span>
+                <input type="checkbox" id="notify-finished" checked />
+                <span class="toggle-switch"></span>
+              </label>
+
+              <label class="toggle-row sub-toggle">
+                <span class="toggle-label">Notify when session disconnected</span>
+                <input type="checkbox" id="notify-disconnected" checked />
+                <span class="toggle-switch"></span>
+              </label>
+            </div>
+          </section>
+
           <!-- Blocked Sites Section -->
           <section class="sites-section">
             <div class="section-header">
@@ -223,6 +259,7 @@
                 <li>Real-time session monitoring</li>
                 <li>Automatic site blocking when idle</li>
                 <li>Status overlay on all pages</li>
+                <li>Desktop notifications for session events</li>
                 <li>Emergency bypass for urgent access</li>
               </ul>
             </div>
