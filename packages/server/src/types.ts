@@ -25,7 +25,8 @@ export interface InternalSession {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
   projectName: string;
-  cwd?: string;
+  initialCwd?: string; // Original project directory (never changes after first set)
+  cwd?: string; // Current directory (may change on session recreation)
   startTime: Date;
   lastActivity: Date;
   lastTool?: string;

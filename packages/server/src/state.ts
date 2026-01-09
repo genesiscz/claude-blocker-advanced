@@ -20,7 +20,8 @@ interface PersistedData {
 interface HistoricalSession {
   id: string;
   projectName: string;
-  cwd?: string;
+  initialCwd?: string; // Original project directory
+  cwd?: string; // Current directory at session end
   startTime: string;
   endTime: string;
   lastTool?: string;
@@ -99,6 +100,7 @@ function toSession(internal: InternalSession): Session {
     id: internal.id,
     status: internal.status,
     projectName: internal.projectName,
+    initialCwd: internal.initialCwd,
     cwd: internal.cwd,
     startTime: internal.startTime.toISOString(),
     lastActivity: internal.lastActivity.toISOString(),
@@ -116,6 +118,8 @@ function toSession(internal: InternalSession): Session {
 class SessionState {
   private sessions: Map<string, InternalSession> = new Map();
   private listeners: Set<StateChangeCallback> = new Set();
+  // Track first-seen cwd for each session ID to preserve original project directory
+  private sessionInitialCwds: Map<string, string> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   private persistedData: PersistedData;
   private saveDebounceTimer: NodeJS.Timeout | null = null;
@@ -147,6 +151,7 @@ class SessionState {
     const historicalSession: HistoricalSession = {
       id: session.id,
       projectName: session.projectName,
+      initialCwd: session.initialCwd,
       cwd: session.cwd,
       startTime: session.startTime.toISOString(),
       endTime: now.toISOString(),
@@ -213,10 +218,16 @@ class SessionState {
     switch (hook_event_name) {
       case "SessionStart": {
         const now = new Date();
+        // Track first-seen cwd for this session ID (preserves original project directory)
+        if (payload.cwd && !this.sessionInitialCwds.has(session_id)) {
+          this.sessionInitialCwds.set(session_id, payload.cwd);
+        }
+        const initialCwd = this.sessionInitialCwds.get(session_id);
         this.sessions.set(session_id, {
           id: session_id,
           status: "idle",
-          projectName: getProjectName(payload.cwd, session_id),
+          projectName: getProjectName(initialCwd || payload.cwd, session_id),
+          initialCwd,
           cwd: payload.cwd,
           startTime: now,
           lastActivity: now,
@@ -227,7 +238,7 @@ class SessionState {
           totalTokens: 0,
           costUsd: 0,
         });
-        console.log(`Session started: ${getProjectName(payload.cwd, session_id)}`);
+        console.log(`Session started: ${getProjectName(initialCwd || payload.cwd, session_id)}`);
         break;
       }
 
@@ -321,12 +332,19 @@ class SessionState {
   }
 
   private ensureSession(sessionId: string, cwd?: string): void {
+    // Track first-seen cwd for this session ID (preserves original project directory)
+    if (cwd && !this.sessionInitialCwds.has(sessionId)) {
+      this.sessionInitialCwds.set(sessionId, cwd);
+    }
+
     if (!this.sessions.has(sessionId)) {
       const now = new Date();
+      const initialCwd = this.sessionInitialCwds.get(sessionId);
       this.sessions.set(sessionId, {
         id: sessionId,
         status: "idle",
-        projectName: getProjectName(cwd, sessionId),
+        projectName: getProjectName(initialCwd || cwd, sessionId),
+        initialCwd,
         cwd,
         startTime: now,
         lastActivity: now,
@@ -337,7 +355,7 @@ class SessionState {
         totalTokens: 0,
         costUsd: 0,
       });
-      console.log(`Session connected: ${getProjectName(cwd, sessionId)}`);
+      console.log(`Session connected: ${getProjectName(initialCwd || cwd, sessionId)}`);
     }
   }
 

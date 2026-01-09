@@ -24,6 +24,8 @@ interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
   projectName: string;
+  initialCwd?: string; // Original project directory (never changes)
+  cwd?: string; // Current directory (may change)
   startTime: string;
   lastTool?: string;
   recentTools: ToolCall[];
@@ -447,17 +449,18 @@ function updateOverlay(state: PublicState): void {
           toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
         }
 
-        // Action buttons
+        // Action buttons - use initialCwd (original project dir) for folder/terminal actions
+        const actionCwd = s.initialCwd || s.cwd;
         const actionsHtml = `
           <div class="session-actions">
             <button class="action-btn" data-action="copy-id" data-session-id="${s.id}" title="Copy session ID">
               <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
-            ${s.cwd ? `
-            <button class="action-btn" data-action="open-folder" data-cwd="${s.cwd}" title="Open in Finder">
+            ${actionCwd ? `
+            <button class="action-btn" data-action="open-folder" data-cwd="${actionCwd}" title="Open in Finder">
               <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             </button>
-            <button class="action-btn" data-action="open-terminal" data-cwd="${s.cwd}" data-session-id="${s.id}" title="Resume in Terminal">
+            <button class="action-btn" data-action="open-terminal" data-cwd="${actionCwd}" data-session-id="${s.id}" title="Resume in Terminal">
               <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
             </button>
             ` : ""}

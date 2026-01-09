@@ -19,7 +19,8 @@ interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
   projectName: string;
-  cwd?: string;
+  initialCwd?: string; // Original project directory (never changes)
+  cwd?: string; // Current directory (may change)
   startTime: string;
   lastActivity: string;
   lastTool?: string;
@@ -37,7 +38,8 @@ interface Session {
 interface HistoricalSession {
   id: string;
   projectName: string;
-  cwd?: string;
+  initialCwd?: string; // Original project directory
+  cwd?: string; // Current directory at session end
   startTime: string;
   endTime: string;
   lastActivity: string;
@@ -969,8 +971,9 @@ function renderSessions(sessions: Session[]): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = sorted[index];
-      if (session.cwd) {
-        const result = await executeSessionAction("open-folder", { cwd: session.cwd });
+      const actionCwd = session.initialCwd || session.cwd;
+      if (actionCwd) {
+        const result = await executeSessionAction("open-folder", { cwd: actionCwd });
         if (result.success) {
           showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
         } else {
@@ -986,9 +989,10 @@ function renderSessions(sessions: Session[]): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = sorted[index];
-      if (session.cwd) {
+      const actionCwd = session.initialCwd || session.cwd;
+      if (actionCwd) {
         const result = await executeSessionAction("open-terminal", {
-          cwd: session.cwd,
+          cwd: actionCwd,
           sessionId: session.id,
           terminalApp: currentTerminalConfig.app,
         });
@@ -1118,8 +1122,9 @@ function renderHistory(): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = filtered[index];
-      if (session.cwd) {
-        const result = await executeSessionAction("open-folder", { cwd: session.cwd });
+      const actionCwd = session.initialCwd || session.cwd;
+      if (actionCwd) {
+        const result = await executeSessionAction("open-folder", { cwd: actionCwd });
         if (result.success) {
           showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
         } else {

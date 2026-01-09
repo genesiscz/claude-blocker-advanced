@@ -37,7 +37,8 @@ export interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
   projectName: string; // basename of cwd, or truncated session ID if no cwd
-  cwd?: string;
+  initialCwd?: string; // Original project directory (never changes after first set)
+  cwd?: string; // Current directory (may change on session recreation)
   startTime: string; // ISO string for JSON serialization
   lastActivity: string; // ISO string for JSON serialization
   lastTool?: string;
