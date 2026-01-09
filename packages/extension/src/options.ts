@@ -183,6 +183,7 @@ let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 let currentTerminalConfig: TerminalConfig = DEFAULT_TERMINAL_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
+let lastSortMode: SortMode = "status"; // Track previous sort mode for change detection
 let currentHistoryFilter: HistoryFilter = "all";
 let sessionHistory: HistoricalSession[] = [];
 
@@ -746,6 +747,12 @@ function renderTimeline(sessions: Session[]): void {
 
 // Check if sessions have structurally changed (requires full re-render)
 function sessionsStructureChanged(oldSessions: Session[], newSessions: Session[]): boolean {
+  // Force re-render if sort mode changed
+  if (currentSortMode !== lastSortMode) {
+    lastSortMode = currentSortMode;
+    return true;
+  }
+
   if (oldSessions.length !== newSessions.length) return true;
 
   const oldSorted = sortSessions(oldSessions);
