@@ -1,10 +1,37 @@
-import type { Session, HookPayload, ServerMessage } from "./types.js";
+import path from "path";
+import type { Session, HookPayload, ServerMessage, InternalSession } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
 
 type StateChangeCallback = (message: ServerMessage) => void;
 
+// Derive project name from cwd or use truncated session ID
+function getProjectName(cwd?: string, sessionId?: string): string {
+  if (cwd) {
+    return path.basename(cwd);
+  }
+  if (sessionId) {
+    return sessionId.substring(0, 8);
+  }
+  return "Unknown";
+}
+
+// Convert internal session (with Date objects) to shared Session (with ISO strings)
+function toSession(internal: InternalSession): Session {
+  return {
+    id: internal.id,
+    status: internal.status,
+    projectName: internal.projectName,
+    cwd: internal.cwd,
+    startTime: internal.startTime.toISOString(),
+    lastActivity: internal.lastActivity.toISOString(),
+    lastTool: internal.lastTool,
+    toolCount: internal.toolCount,
+    waitingForInputSince: internal.waitingForInputSince?.toISOString(),
+  };
+}
+
 class SessionState {
-  private sessions: Map<string, Session> = new Map();
+  private sessions: Map<string, InternalSession> = new Map();
   private listeners: Set<StateChangeCallback> = new Set();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -30,15 +57,16 @@ class SessionState {
   }
 
   private getStateMessage(): ServerMessage {
-    const sessions = Array.from(this.sessions.values());
-    const working = sessions.filter((s) => s.status === "working").length;
-    const waitingForInput = sessions.filter(
+    const internalSessions = Array.from(this.sessions.values());
+    const sessions = internalSessions.map(toSession);
+    const working = internalSessions.filter((s) => s.status === "working").length;
+    const waitingForInput = internalSessions.filter(
       (s) => s.status === "waiting_for_input"
     ).length;
     return {
       type: "state",
       blocked: working === 0,
-      sessions: sessions.length,
+      sessions,
       working,
       waitingForInput,
     };
@@ -48,32 +76,48 @@ class SessionState {
     const { session_id, hook_event_name } = payload;
 
     switch (hook_event_name) {
-      case "SessionStart":
+      case "SessionStart": {
+        const now = new Date();
         this.sessions.set(session_id, {
           id: session_id,
           status: "idle",
-          lastActivity: new Date(),
+          projectName: getProjectName(payload.cwd, session_id),
           cwd: payload.cwd,
+          startTime: now,
+          lastActivity: now,
+          toolCount: 0,
         });
-        console.log("Claude Code session connected");
+        console.log(`Session started: ${getProjectName(payload.cwd, session_id)}`);
         break;
+      }
 
       case "SessionEnd":
+        const endingSession = this.sessions.get(session_id);
+        if (endingSession) {
+          console.log(`Session ended: ${endingSession.projectName}`);
+        }
         this.sessions.delete(session_id);
-        console.log("Claude Code session disconnected");
         break;
 
-      case "UserPromptSubmit":
+      case "UserPromptSubmit": {
         this.ensureSession(session_id, payload.cwd);
         const promptSession = this.sessions.get(session_id)!;
         promptSession.status = "working";
         promptSession.waitingForInputSince = undefined;
         promptSession.lastActivity = new Date();
         break;
+      }
 
-      case "PreToolUse":
+      case "PreToolUse": {
         this.ensureSession(session_id, payload.cwd);
         const toolSession = this.sessions.get(session_id)!;
+
+        // Track tool usage
+        toolSession.toolCount++;
+        if (payload.tool_name) {
+          toolSession.lastTool = payload.tool_name;
+        }
+
         // Check if this is a user input tool
         if (payload.tool_name && USER_INPUT_TOOLS.includes(payload.tool_name)) {
           toolSession.status = "waiting_for_input";
@@ -90,8 +134,9 @@ class SessionState {
         }
         toolSession.lastActivity = new Date();
         break;
+      }
 
-      case "Stop":
+      case "Stop": {
         this.ensureSession(session_id, payload.cwd);
         const idleSession = this.sessions.get(session_id)!;
         if (idleSession.status === "waiting_for_input") {
@@ -106,6 +151,7 @@ class SessionState {
         }
         idleSession.lastActivity = new Date();
         break;
+      }
     }
 
     this.broadcast();
@@ -113,13 +159,17 @@ class SessionState {
 
   private ensureSession(sessionId: string, cwd?: string): void {
     if (!this.sessions.has(sessionId)) {
+      const now = new Date();
       this.sessions.set(sessionId, {
         id: sessionId,
         status: "idle",
-        lastActivity: new Date(),
+        projectName: getProjectName(cwd, sessionId),
         cwd,
+        startTime: now,
+        lastActivity: now,
+        toolCount: 0,
       });
-      console.log("Claude Code session connected");
+      console.log(`Session connected: ${getProjectName(cwd, sessionId)}`);
     }
   }
 
@@ -129,6 +179,7 @@ class SessionState {
 
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+        console.log(`Session timed out: ${session.projectName}`);
         this.sessions.delete(id);
         removed++;
       }
@@ -140,8 +191,9 @@ class SessionState {
   }
 
   getStatus(): { blocked: boolean; sessions: Session[] } {
-    const sessions = Array.from(this.sessions.values());
-    const working = sessions.filter((s) => s.status === "working").length;
+    const internalSessions = Array.from(this.sessions.values());
+    const sessions = internalSessions.map(toSession);
+    const working = internalSessions.filter((s) => s.status === "working").length;
     return {
       blocked: working === 0,
       sessions,

@@ -26,6 +26,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@claude-blocker/shared": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

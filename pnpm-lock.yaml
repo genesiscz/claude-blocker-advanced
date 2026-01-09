@@ -32,6 +32,9 @@ importers:
 
   packages/server:
     dependencies:
+      '@claude-blocker/shared':
+        specifier: workspace:*
+        version: link:../shared
       ws:
         specifier: ^8.18.0
         version: 8.18.3
