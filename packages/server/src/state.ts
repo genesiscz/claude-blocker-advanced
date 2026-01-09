@@ -1,5 +1,5 @@
 import path from "path";
-import type { Session, HookPayload, ServerMessage, InternalSession } from "./types.js";
+import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
 
 type StateChangeCallback = (message: ServerMessage) => void;
@@ -15,6 +15,26 @@ function getProjectName(cwd?: string, sessionId?: string): string {
   return "Unknown";
 }
 
+// Convert internal tool call to shared ToolCall format
+function toToolCall(internal: InternalToolCall): ToolCall {
+  const toolCall: ToolCall = {
+    name: internal.name,
+    timestamp: internal.timestamp.toISOString(),
+  };
+
+  // Extract only the relevant input fields
+  if (internal.input) {
+    const input: ToolCall["input"] = {};
+    if (typeof internal.input.file_path === "string") input.file_path = internal.input.file_path;
+    if (typeof internal.input.command === "string") input.command = internal.input.command;
+    if (typeof internal.input.pattern === "string") input.pattern = internal.input.pattern;
+    if (typeof internal.input.description === "string") input.description = internal.input.description;
+    if (Object.keys(input).length > 0) toolCall.input = input;
+  }
+
+  return toolCall;
+}
+
 // Convert internal session (with Date objects) to shared Session (with ISO strings)
 function toSession(internal: InternalSession): Session {
   return {
@@ -26,6 +46,7 @@ function toSession(internal: InternalSession): Session {
     lastActivity: internal.lastActivity.toISOString(),
     lastTool: internal.lastTool,
     toolCount: internal.toolCount,
+    recentTools: internal.recentTools.map(toToolCall),
     waitingForInputSince: internal.waitingForInputSince?.toISOString(),
     inputTokens: internal.inputTokens,
     outputTokens: internal.outputTokens,
@@ -90,6 +111,7 @@ class SessionState {
           startTime: now,
           lastActivity: now,
           toolCount: 0,
+          recentTools: [],
           inputTokens: 0,
           outputTokens: 0,
           totalTokens: 0,
@@ -125,6 +147,14 @@ class SessionState {
         toolSession.toolCount++;
         if (payload.tool_name) {
           toolSession.lastTool = payload.tool_name;
+
+          // Add to recent tools history (keep last 5)
+          const toolCall: InternalToolCall = {
+            name: payload.tool_name,
+            timestamp: new Date(),
+            input: payload.tool_input,
+          };
+          toolSession.recentTools = [toolCall, ...toolSession.recentTools].slice(0, 5);
         }
 
         // Check if this is a user input tool
@@ -189,6 +219,7 @@ class SessionState {
         startTime: now,
         lastActivity: now,
         toolCount: 0,
+        recentTools: [],
         inputTokens: 0,
         outputTokens: 0,
         totalTokens: 0,

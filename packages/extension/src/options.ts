@@ -2,6 +2,17 @@ export {};
 
 const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
 
+interface ToolCall {
+  name: string;
+  timestamp: string;
+  input?: {
+    file_path?: string;
+    command?: string;
+    pattern?: string;
+    description?: string;
+  };
+}
+
 interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
@@ -11,6 +22,7 @@ interface Session {
   lastActivity: string;
   lastTool?: string;
   toolCount: number;
+  recentTools: ToolCall[];
   waitingForInputSince?: string;
   // Token tracking
   inputTokens: number;
@@ -235,6 +247,37 @@ function formatRelativeTime(dateString: string): string {
     const day = date.getDate();
     return `${month} ${day} ${timeStr}`;
   }
+}
+
+// Format relative time from ms (e.g., "-30s", "-5m")
+function formatToolRelativeTime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) return `-${hours}h`;
+  if (minutes > 0) return `-${minutes}m`;
+  return `-${seconds}s`;
+}
+
+// Format tool label with truncated input info
+function formatToolLabel(tool: ToolCall): string {
+  const { name, input } = tool;
+  if (!input) return name;
+
+  if (input.file_path) {
+    const filename = input.file_path.split("/").pop() ?? input.file_path;
+    return `${name}: ${filename}`;
+  }
+  if (input.command) {
+    const firstWord = input.command.split(" ")[0];
+    return `${name}: ${firstWord}`;
+  }
+  if (input.pattern) {
+    const truncated = input.pattern.length > 12 ? input.pattern.slice(0, 12) + "…" : input.pattern;
+    return `${name}: "${truncated}"`;
+  }
+  return name;
 }
 
 // Get date category for filtering
@@ -477,12 +520,19 @@ function copySessionId(sessionId: string, button: HTMLButtonElement): void {
   });
 }
 
-// Open project folder in Finder
-function openProjectFolder(cwd: string): void {
-  // Open using file:// URL in a new tab
-  // Note: This may not work in all browsers due to security restrictions
-  // but Chrome allows it for extension pages
-  window.open(`file://${cwd}`, "_blank");
+// Open project folder in Finder via server
+async function openProjectFolder(cwd: string): Promise<void> {
+  try {
+    const response = await fetch("http://localhost:8765/action/open-finder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: cwd }),
+    });
+    if (!response.ok) throw new Error("Failed to open folder");
+  } catch {
+    // Fallback: copy path to clipboard
+    await navigator.clipboard.writeText(cwd);
+  }
 }
 
 // Update session activity tracking
@@ -672,8 +722,18 @@ function renderSessions(sessions: Session[]): void {
       waitHtml = `<span class="waiting-time ${waitClass}">Waiting ${formatDuration(waitTime)}</span>`;
     }
 
-    const toolHtml = session.lastTool
-      ? `<span class="session-tool">${session.lastTool}</span>` : "";
+    // Render recent tools with relative timestamps
+    let toolsHtml = "";
+    if (session.recentTools && session.recentTools.length > 0) {
+      const toolBadges = session.recentTools.map((tool, i) => {
+        const timeSince = now - new Date(tool.timestamp).getTime();
+        const timeStr = formatToolRelativeTime(timeSince);
+        const label = formatToolLabel(tool);
+        const latestClass = i === 0 ? "latest" : "";
+        return `<span class="tool-badge ${latestClass}" title="${tool.name}">${label} <span class="tool-time">${timeStr}</span></span>`;
+      });
+      toolsHtml = `<div class="session-tools">${toolBadges.join("")}</div>`;
+    }
 
     // Add cwd display if available
     const cwdHtml = session.cwd
@@ -723,8 +783,8 @@ function renderSessions(sessions: Session[]): void {
             ${waitHtml}
             ${tokenHtml}
           </div>
+          ${toolsHtml}
         </div>
-        ${toolHtml}
         ${actionsHtml}
         <span class="session-id" title="Click to copy">${session.id.substring(0, 8)}</span>
       </div>

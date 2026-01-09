@@ -1,3 +1,15 @@
+// Tool call record (for tracking recent tools)
+export interface ToolCall {
+  name: string;
+  timestamp: string; // ISO string
+  input?: {
+    file_path?: string;
+    command?: string;
+    pattern?: string;
+    description?: string;
+  };
+}
+
 // Hook event payload (from Claude Code)
 export interface HookPayload {
   session_id: string;
@@ -30,6 +42,7 @@ export interface Session {
   lastActivity: string; // ISO string for JSON serialization
   lastTool?: string;
   toolCount: number;
+  recentTools: ToolCall[]; // Last 5 tool calls
   waitingForInputSince?: string; // ISO string for JSON serialization
   // Token tracking
   inputTokens: number;

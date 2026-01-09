@@ -5,6 +5,18 @@ const TOAST_ID = "claude-blocker-toast";
 const OVERLAY_ID = "claude-blocker-overlay";
 const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
 
+// Tool call record
+interface ToolCall {
+  name: string;
+  timestamp: string;
+  input?: {
+    file_path?: string;
+    command?: string;
+    pattern?: string;
+    description?: string;
+  };
+}
+
 // Session type from service worker
 interface Session {
   id: string;
@@ -12,6 +24,7 @@ interface Session {
   projectName: string;
   startTime: string;
   lastTool?: string;
+  recentTools: ToolCall[];
   waitingForInputSince?: string;
 }
 
@@ -89,6 +102,38 @@ function formatDuration(ms: number): string {
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
   if (minutes > 0) return `${minutes}m`;
   return `${seconds}s`;
+}
+
+// Format relative time (e.g., "-30s", "-5m")
+function formatRelativeTime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) return `-${hours}h`;
+  if (minutes > 0) return `-${minutes}m`;
+  return `-${seconds}s`;
+}
+
+// Format tool label with truncated input info
+function formatToolLabel(tool: ToolCall): string {
+  const { name, input } = tool;
+  if (!input) return name;
+
+  if (input.file_path) {
+    const filename = input.file_path.split("/").pop() ?? input.file_path;
+    const truncated = filename.length > 15 ? filename.slice(0, 12) + "…" : filename;
+    return `${name}: ${truncated}`;
+  }
+  if (input.command) {
+    const firstWord = input.command.split(" ")[0];
+    return `${name}: ${firstWord}`;
+  }
+  if (input.pattern) {
+    const truncated = input.pattern.length > 10 ? input.pattern.slice(0, 10) + "…" : input.pattern;
+    return `${name}: "${truncated}"`;
+  }
+  return name;
 }
 
 // ============ BLOCKING MODAL ============
@@ -258,11 +303,17 @@ function createOverlay(): void {
       .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
       .label { color: #999; font-size: 12px; font-weight: 500; }
       .sessions-list { display: none; position: absolute; top: 100%; ${overlayConfig.position.includes("right") ? "right" : "left"}: 0; margin-top: 8px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 200px; max-width: 280px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-      .session-item { padding: 10px 12px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 8px; }
+      .session-item { padding: 10px 12px; border-bottom: 1px solid #2a2a2a; }
       .session-item:last-child { border-bottom: none; }
+      .session-header { display: flex; align-items: center; gap: 8px; }
       .session-name { flex: 1; color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .session-info { color: #666; font-size: 11px; }
       .session-wait { color: #ffd60a; font-size: 10px; margin-left: 4px; }
+      .session-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; margin-left: 16px; }
+      .tool-badge { font-size: 10px; padding: 2px 5px; background: #2a2a2a; border-radius: 4px; color: #777; font-family: ui-monospace, monospace; white-space: nowrap; }
+      .tool-badge.latest { color: #999; background: #333; }
+      .tool-time { font-size: 9px; color: #555; margin-left: 2px; }
+      .tool-badge.latest .tool-time { color: #666; }
       .no-sessions { padding: 16px; text-align: center; color: #666; font-size: 12px; }
     </style>
     <div class="overlay">
@@ -337,11 +388,28 @@ function updateOverlay(state: PublicState): void {
         }
         const dotClass =
           s.status === "working" ? "working" : s.status === "waiting_for_input" ? "waiting" : "idle";
+
+        // Render recent tools (show up to 3 in overlay for compactness)
+        let toolsHtml = "";
+        if (s.recentTools && s.recentTools.length > 0) {
+          const toolBadges = s.recentTools.slice(0, 3).map((tool, i) => {
+            const timeSince = now - new Date(tool.timestamp).getTime();
+            const timeStr = formatRelativeTime(timeSince);
+            const label = formatToolLabel(tool);
+            const latestClass = i === 0 ? "latest" : "";
+            return `<span class="tool-badge ${latestClass}">${label}<span class="tool-time">${timeStr}</span></span>`;
+          });
+          toolsHtml = `<div class="session-tools">${toolBadges.join("")}</div>`;
+        }
+
         return `
           <div class="session-item">
-            <span class="status-dot ${dotClass}"></span>
-            <span class="session-name">${s.projectName}</span>
-            <span class="session-info">${uptime}${waitHtml}</span>
+            <div class="session-header">
+              <span class="status-dot ${dotClass}"></span>
+              <span class="session-name">${s.projectName}</span>
+              <span class="session-info">${uptime}${waitHtml}</span>
+            </div>
+            ${toolsHtml}
           </div>
         `;
       })

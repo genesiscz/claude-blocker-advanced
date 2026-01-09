@@ -4,6 +4,7 @@ export type {
   Session,
   ServerMessage,
   ClientMessage,
+  ToolCall,
 } from "@claude-blocker/shared";
 
 export {
@@ -11,6 +12,13 @@ export {
   SESSION_TIMEOUT_MS,
   USER_INPUT_TOOLS,
 } from "@claude-blocker/shared";
+
+// Internal tool call (with Date objects for easier manipulation)
+export interface InternalToolCall {
+  name: string;
+  timestamp: Date;
+  input?: Record<string, unknown>;
+}
 
 // Internal session state (with Date objects for easier manipulation)
 export interface InternalSession {
@@ -22,6 +30,7 @@ export interface InternalSession {
   lastActivity: Date;
   lastTool?: string;
   toolCount: number;
+  recentTools: InternalToolCall[]; // Last 5 tool calls
   waitingForInputSince?: Date;
   // Token tracking
   inputTokens: number;

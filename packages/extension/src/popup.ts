@@ -1,5 +1,16 @@
 export {};
 
+interface ToolCall {
+  name: string;
+  timestamp: string;
+  input?: {
+    file_path?: string;
+    command?: string;
+    pattern?: string;
+    description?: string;
+  };
+}
+
 interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
@@ -9,6 +20,7 @@ interface Session {
   lastActivity: string;
   lastTool?: string;
   toolCount: number;
+  recentTools: ToolCall[];
   waitingForInputSince?: string;
 }
 
@@ -43,6 +55,37 @@ function formatDuration(ms: number): string {
     return `${minutes}m`;
   }
   return `${seconds}s`;
+}
+
+// Format relative time (e.g., "-30s", "-5m")
+function formatRelativeTime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) return `-${hours}h`;
+  if (minutes > 0) return `-${minutes}m`;
+  return `-${seconds}s`;
+}
+
+// Format tool label with truncated input info
+function formatToolLabel(tool: ToolCall): string {
+  const { name, input } = tool;
+  if (!input) return name;
+
+  if (input.file_path) {
+    const filename = input.file_path.split("/").pop() ?? input.file_path;
+    return `${name}: ${filename}`;
+  }
+  if (input.command) {
+    const firstWord = input.command.split(" ")[0];
+    return `${name}: ${firstWord}`;
+  }
+  if (input.pattern) {
+    const truncated = input.pattern.length > 12 ? input.pattern.slice(0, 12) + "…" : input.pattern;
+    return `${name}: "${truncated}"`;
+  }
+  return name;
 }
 
 // Get status dot class
@@ -84,9 +127,17 @@ function renderSession(session: Session): HTMLElement {
     waitInfo = `<span class="session-wait ${waitClass}">⏳ ${formatDuration(waitTime)}</span>`;
   }
 
-  let toolInfo = "";
-  if (session.lastTool) {
-    toolInfo = `<span class="session-tool">${session.lastTool}</span>`;
+  // Render recent tools with relative timestamps
+  let toolsHtml = "";
+  if (session.recentTools && session.recentTools.length > 0) {
+    const toolBadges = session.recentTools.map((tool, i) => {
+      const timeSince = now - new Date(tool.timestamp).getTime();
+      const timeStr = formatRelativeTime(timeSince);
+      const label = formatToolLabel(tool);
+      const latestClass = i === 0 ? "latest" : "";
+      return `<span class="tool-badge ${latestClass}" title="${tool.name}">${label} <span class="tool-time">${timeStr}</span></span>`;
+    });
+    toolsHtml = `<div class="session-tools">${toolBadges.join("")}</div>`;
   }
 
   el.innerHTML = `
@@ -97,8 +148,8 @@ function renderSession(session: Session): HTMLElement {
     </div>
     <div class="session-details">
       ${waitInfo}
-      ${toolInfo}
     </div>
+    ${toolsHtml}
   `;
 
   return el;

@@ -622,6 +622,45 @@ section {
   border: 1px solid var(--border-subtle);
 }
 
+/* Recent tools list */
+.session-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tool-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-badge.latest {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.tool-time {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-feature-settings: "tnum";
+  margin-left: 4px;
+}
+
+.tool-badge.latest .tool-time {
+  color: var(--text-muted);
+}
+
 .session-tokens {
   font-family: var(--font-mono);
   font-size: 11px;

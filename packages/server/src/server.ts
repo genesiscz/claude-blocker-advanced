@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { execSync } from "child_process";
 import { WebSocketServer, WebSocket } from "ws";
 import type { HookPayload, ClientMessage } from "./types.js";
 import { DEFAULT_PORT } from "./types.js";
@@ -54,6 +55,26 @@ export function startServer(port: number = DEFAULT_PORT): void {
         sendJson(res, { ok: true });
       } catch {
         sendJson(res, { error: "Invalid JSON" }, 400);
+      }
+      return;
+    }
+
+    // Action: Open in Finder (macOS)
+    if (req.method === "POST" && url.pathname === "/action/open-finder") {
+      try {
+        const body = await parseBody(req);
+        const { path } = JSON.parse(body) as { path: string };
+
+        if (!path) {
+          sendJson(res, { success: false, error: "Path is required" }, 400);
+          return;
+        }
+
+        // Use 'open' command on macOS to open folder in Finder
+        execSync(`open "${path.replace(/"/g, '\\"')}"`);
+        sendJson(res, { success: true });
+      } catch (error) {
+        sendJson(res, { success: false, error: String(error) }, 500);
       }
       return;
     }
