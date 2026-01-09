@@ -32,6 +32,17 @@ const HOOKS_CONFIG = {
       ],
     },
   ],
+  PostToolUse: [
+    {
+      matcher: "*",
+      hooks: [
+        {
+          type: "command",
+          command: HOOK_COMMAND,
+        },
+      ],
+    },
+  ],
   Stop: [
     {
       hooks: [
@@ -107,6 +118,7 @@ export function setupHooks(): void {
 │   Configured hooks:                             │
 │   - UserPromptSubmit (work starting)            │
 │   - PreToolUse (tool executing)                 │
+│   - PostToolUse (tool completed)                │
 │   - Stop (work finished)                        │
 │   - SessionStart (session began)                │
 │   - SessionEnd (session ended)                  │
@@ -133,7 +145,9 @@ export function areHooksConfigured(): boolean {
     }
 
     // Check if at least one of our hooks is configured
-    return Object.keys(HOOKS_CONFIG).some((hookName) => hookName in settings.hooks!);
+    return Object.keys(HOOKS_CONFIG).some(
+      (hookName) => hookName in settings.hooks!
+    );
   } catch {
     return false;
   }
