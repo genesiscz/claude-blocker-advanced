@@ -1354,6 +1354,10 @@ async function testSound(sound: SoundStyle): Promise<void> {
       chrome.runtime.sendMessage(
         { type: "TEST_SOUND", sound, message },
         (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message || "Service worker not ready"));
+            return;
+          }
           if (response?.success) {
             resolve();
           } else {
@@ -1592,11 +1596,22 @@ testNotificationBtn.addEventListener("click", async () => {
   notificationStatus.className = "notification-status";
 
   try {
-    const response = await new Promise<{ success: boolean; error?: string; notificationId?: string }>((resolve) => {
-      chrome.runtime.sendMessage({ type: "TEST_NOTIFICATION" }, resolve);
+    const response = await new Promise<{ success: boolean; error?: string; notificationId?: string } | undefined>((resolve) => {
+      chrome.runtime.sendMessage({ type: "TEST_NOTIFICATION" }, (res) => {
+        if (chrome.runtime.lastError) {
+          console.error("[Options] Test notification error:", chrome.runtime.lastError);
+          resolve(undefined);
+        } else {
+          resolve(res);
+        }
+      });
     });
 
-    if (response.success) {
+    if (!response) {
+      notificationStatus.textContent = "Service worker not ready";
+      notificationStatus.className = "notification-status error";
+      showToast("Service worker not ready - try refreshing the extension", "error");
+    } else if (response.success) {
       notificationStatus.textContent = `Success! ID: ${response.notificationId?.slice(0, 12)}...`;
       notificationStatus.className = "notification-status success";
       showToast("Test notification sent!", "success");
@@ -1621,24 +1636,34 @@ async function updateNotificationDebugInfo(): Promise<void> {
     const response = await new Promise<{
       success: boolean;
       config: NotificationConfig;
+      soundConfig?: SoundConfig;
       notificationCount: number;
       serverConnected: boolean;
       sessionsCount: number;
       sessions: Array<{ id: string; status: string; project: string }>;
-    }>((resolve) => {
-      chrome.runtime.sendMessage({ type: "GET_NOTIFICATION_DEBUG" }, resolve);
+    } | undefined>((resolve) => {
+      chrome.runtime.sendMessage({ type: "GET_NOTIFICATION_DEBUG" }, (res) => {
+        // Handle case where service worker isn't ready
+        if (chrome.runtime.lastError) {
+          console.error("[Options] Debug info error:", chrome.runtime.lastError);
+          resolve(undefined);
+        } else {
+          resolve(res);
+        }
+      });
     });
 
-    if (response.success) {
+    if (response?.success) {
       notificationDebugInfo.textContent = JSON.stringify({
         config: response.config,
+        soundConfig: response.soundConfig,
         notificationsSent: response.notificationCount,
         serverConnected: response.serverConnected,
         activeSessions: response.sessionsCount,
         sessions: response.sessions
       }, null, 2);
     } else {
-      notificationDebugInfo.textContent = "Failed to get debug info";
+      notificationDebugInfo.textContent = "Service worker not ready - try refreshing";
     }
   } catch (error) {
     notificationDebugInfo.textContent = `Error: ${String(error)}`;
