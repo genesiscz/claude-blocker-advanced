@@ -7,7 +7,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 1: Core Session Info Display
-**Status: Planned**
+**Status: Done**
 
 ### Server Enhancements
 - [ ] Track `startTime` per session (when SessionStart received)
@@ -40,7 +40,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 2: Dashboard Enhancements
-**Status: Planned**
+**Status: Done**
 
 ### Options Page Redesign
 - [ ] Full dashboard layout with sidebar navigation
@@ -70,7 +70,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 3: Notifications with Sound Alerts
-**Status: Planned**
+**Status: Done (Chrome notifications only, sound alerts deferred)**
 
 ### Chrome Notifications
 - [ ] Session started notification
