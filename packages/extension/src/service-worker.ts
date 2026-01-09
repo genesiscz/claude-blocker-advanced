@@ -20,6 +20,22 @@ interface NotificationConfig {
   onDisconnected: boolean;
 }
 
+// Productivity stats interface
+interface DailyStats {
+  date: string; // YYYY-MM-DD
+  totalWorkingMs: number;
+  totalWaitingMs: number;
+  totalIdleMs: number;
+  sessionsStarted: number;
+  sessionsEnded: number;
+}
+
+// Track state timestamps per session for stats calculation
+interface SessionStateTracking {
+  lastStatus: "idle" | "working" | "waiting_for_input";
+  lastStatusChangeTime: number; // timestamp in ms
+}
+
 const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
   enabled: true,
   onWaiting: true,
@@ -49,6 +65,9 @@ const state: State = {
 let previousSessions: Session[] = [];
 let wasConnected = false;
 
+// Session state tracking for stats
+const sessionStateTracking: Map<string, SessionStateTracking> = new Map();
+
 // Notification config
 let notificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 
@@ -56,6 +75,135 @@ let websocket: WebSocket | null = null;
 let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let retryCount = 0;
+
+// Get today's date in YYYY-MM-DD format
+function getTodayDateKey(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Get storage key for daily stats
+function getStatsStorageKey(date: string): string {
+  return `stats_${date}`;
+}
+
+// Load daily stats from storage
+async function loadDailyStats(date: string): Promise<DailyStats> {
+  const key = getStatsStorageKey(date);
+  const result = await chrome.storage.local.get([key]);
+  if (result[key]) {
+    return result[key] as DailyStats;
+  }
+  // Return default empty stats for the date
+  return {
+    date,
+    totalWorkingMs: 0,
+    totalWaitingMs: 0,
+    totalIdleMs: 0,
+    sessionsStarted: 0,
+    sessionsEnded: 0,
+  };
+}
+
+// Save daily stats to storage
+async function saveDailyStats(stats: DailyStats): Promise<void> {
+  const key = getStatsStorageKey(stats.date);
+  await chrome.storage.local.set({ [key]: stats });
+}
+
+// Update daily stats based on session state changes
+async function updateDailyStats(
+  newSessions: Session[],
+  oldSessions: Session[]
+): Promise<void> {
+  const now = Date.now();
+  const todayKey = getTodayDateKey();
+  const stats = await loadDailyStats(todayKey);
+
+  // Create maps for easier lookup
+  const oldMap = new Map(oldSessions.map((s) => [s.id, s]));
+  const newMap = new Map(newSessions.map((s) => [s.id, s]));
+
+  // Track new sessions (sessions that appear in new but not in old)
+  for (const session of newSessions) {
+    if (!oldMap.has(session.id)) {
+      stats.sessionsStarted++;
+      // Initialize tracking for new session
+      sessionStateTracking.set(session.id, {
+        lastStatus: session.status,
+        lastStatusChangeTime: now,
+      });
+    }
+  }
+
+  // Track ended sessions (sessions that were in old but not in new)
+  for (const oldSession of oldSessions) {
+    if (!newMap.has(oldSession.id)) {
+      stats.sessionsEnded++;
+
+      // Add remaining time from last known state
+      const tracking = sessionStateTracking.get(oldSession.id);
+      if (tracking) {
+        const timeInState = now - tracking.lastStatusChangeTime;
+        switch (tracking.lastStatus) {
+          case "working":
+            stats.totalWorkingMs += timeInState;
+            break;
+          case "waiting_for_input":
+            stats.totalWaitingMs += timeInState;
+            break;
+          case "idle":
+            stats.totalIdleMs += timeInState;
+            break;
+        }
+        // Clean up tracking for ended session
+        sessionStateTracking.delete(oldSession.id);
+      }
+    }
+  }
+
+  // Track state changes for existing sessions
+  for (const newSession of newSessions) {
+    const oldSession = oldMap.get(newSession.id);
+    const tracking = sessionStateTracking.get(newSession.id);
+
+    if (tracking) {
+      // Check if status changed
+      if (newSession.status !== tracking.lastStatus) {
+        // Calculate time spent in previous state
+        const timeInPreviousState = now - tracking.lastStatusChangeTime;
+
+        switch (tracking.lastStatus) {
+          case "working":
+            stats.totalWorkingMs += timeInPreviousState;
+            break;
+          case "waiting_for_input":
+            stats.totalWaitingMs += timeInPreviousState;
+            break;
+          case "idle":
+            stats.totalIdleMs += timeInPreviousState;
+            break;
+        }
+
+        // Update tracking with new state
+        tracking.lastStatus = newSession.status;
+        tracking.lastStatusChangeTime = now;
+      }
+    } else if (oldSession) {
+      // Session exists but wasn't being tracked (edge case after service worker restart)
+      sessionStateTracking.set(newSession.id, {
+        lastStatus: newSession.status,
+        lastStatusChangeTime: now,
+      });
+    }
+  }
+
+  // Save updated stats
+  await saveDailyStats(stats);
+}
 
 // Load bypass from storage on startup
 chrome.storage.sync.get(["bypassUntil"], (result) => {
@@ -203,6 +351,11 @@ function connect() {
           const newSessions: Session[] = msg.sessions ?? [];
           checkForNotifications(newSessions);
 
+          // Update daily stats based on state changes
+          updateDailyStats(newSessions, state.sessions).catch((err) => {
+            console.error("[Claude Blocker] Failed to update stats:", err);
+          });
+
           // Update previous sessions for next comparison
           previousSessions = state.sessions;
 
@@ -296,6 +449,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         bypassUntil: state.bypassUntil,
       });
     });
+    return true;
+  }
+
+  if (message.type === "GET_DAILY_STATS") {
+    // Get stats for a specific date or today
+    const date = message.date ?? getTodayDateKey();
+    loadDailyStats(date)
+      .then((stats) => {
+        sendResponse({ success: true, stats });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: String(err) });
+      });
+    return true;
+  }
+
+  if (message.type === "GET_STATS_RANGE") {
+    // Get stats for a range of dates (array of date strings)
+    const dates: string[] = message.dates ?? [getTodayDateKey()];
+    Promise.all(dates.map((d) => loadDailyStats(d)))
+      .then((statsArray) => {
+        sendResponse({ success: true, stats: statsArray });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: String(err) });
+      });
     return true;
   }
 
