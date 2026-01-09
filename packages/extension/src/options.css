@@ -539,8 +539,8 @@ section {
 
 .session-card {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 0;
   padding: 16px 20px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -551,6 +551,12 @@ section {
 .session-card:hover {
   background: var(--bg-hover);
   border-color: var(--border-default);
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .session-dot {
@@ -575,7 +581,7 @@ section {
   background: var(--text-dim);
 }
 
-.session-info {
+.session-title {
   flex: 1;
   min-width: 0;
 }
@@ -584,14 +590,12 @@ section {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 2px;
 }
 
 .session-cwd {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-dim);
-  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -602,6 +606,7 @@ section {
   gap: 12px;
   font-size: 12px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .session-meta .waiting-time {

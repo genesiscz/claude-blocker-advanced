@@ -869,19 +869,21 @@ function renderSessions(sessions: Session[]): void {
 
     return `
       <div class="session-card">
-        <span class="session-dot ${dotClass}"></span>
-        <div class="session-info">
-          <div class="session-name">${session.projectName}</div>
-          ${cwdHtml}
+        <div class="session-header">
+          <span class="session-dot ${dotClass}"></span>
+          <div class="session-title">
+            <div class="session-name">${session.projectName}</div>
+            ${cwdHtml}
+          </div>
           <div class="session-meta">
             <span>${uptime}</span>
             ${waitHtml}
             ${tokenHtml}
           </div>
-          ${toolsHtml}
+          ${actionsHtml}
+          <span class="session-id" title="Click to copy">${session.id.substring(0, 8)}</span>
         </div>
-        ${actionsHtml}
-        <span class="session-id" title="Click to copy">${session.id.substring(0, 8)}</span>
+        ${toolsHtml}
       </div>
     `;
   }).join("");
