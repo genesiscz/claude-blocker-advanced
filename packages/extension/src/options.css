@@ -704,6 +704,171 @@ section {
   flex-shrink: 0;
 }
 
+/* History Section */
+.history-section .history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 600px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+.history-section .history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-section .history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-section .history-list::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+.history-section .no-history {
+  text-align: center;
+  padding: 32px 24px;
+  color: var(--text-dim);
+  font-size: 14px;
+  background: var(--bg-surface);
+  border-radius: 12px;
+}
+
+.history-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  opacity: 0.85;
+}
+
+.history-card:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  opacity: 1;
+}
+
+.history-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.history-cwd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.history-time {
+  color: var(--text-muted);
+}
+
+.history-duration {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.history-tool {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.history-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.history-id:hover {
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+/* History Quick Actions */
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.history-card:hover .history-actions {
+  opacity: 1;
+}
+
+.history-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.history-action-btn:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.history-action-btn:active {
+  transform: scale(0.95);
+}
+
+.history-action-btn.copied {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.history-action-btn svg {
+  flex-shrink: 0;
+}
+
 /* Settings Group (shared between overlay and notifications) */
 .settings-group {
   display: flex;
@@ -1374,7 +1539,8 @@ footer p {
   }
 
   /* Show action buttons always on mobile */
-  .session-actions {
+  .session-actions,
+  .history-actions {
     opacity: 1;
   }
 

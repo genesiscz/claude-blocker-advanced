@@ -13,6 +13,19 @@ interface Session {
   waitingForInputSince?: string;
 }
 
+// Historical session - session that has ended
+interface HistoricalSession {
+  id: string;
+  projectName: string;
+  cwd?: string;
+  startTime: string;
+  endTime: string;
+  lastActivity: string;
+  lastTool?: string;
+  toolCount: number;
+  totalDurationMs: number;
+}
+
 interface NotificationConfig {
   enabled: boolean;
   onWaiting: boolean;
@@ -47,6 +60,8 @@ const WS_URL = "ws://localhost:8765/ws";
 const KEEPALIVE_INTERVAL = 20_000;
 const RECONNECT_BASE_DELAY = 1_000;
 const RECONNECT_MAX_DELAY = 30_000;
+const SESSION_HISTORY_MAX_DAYS = 7;
+const SESSION_HISTORY_STORAGE_KEY = "sessionHistory";
 
 // The actual state - service worker is single source of truth
 interface State {
@@ -114,6 +129,53 @@ async function saveDailyStats(stats: DailyStats): Promise<void> {
   await chrome.storage.local.set({ [key]: stats });
 }
 
+// Load session history from storage
+async function loadSessionHistory(): Promise<HistoricalSession[]> {
+  const result = await chrome.storage.local.get([SESSION_HISTORY_STORAGE_KEY]);
+  if (result[SESSION_HISTORY_STORAGE_KEY] && Array.isArray(result[SESSION_HISTORY_STORAGE_KEY])) {
+    return result[SESSION_HISTORY_STORAGE_KEY] as HistoricalSession[];
+  }
+  return [];
+}
+
+// Save session history to storage
+async function saveSessionHistory(history: HistoricalSession[]): Promise<void> {
+  await chrome.storage.local.set({ [SESSION_HISTORY_STORAGE_KEY]: history });
+}
+
+// Add a session to history when it ends
+async function addSessionToHistory(session: Session): Promise<void> {
+  const now = Date.now();
+  const startTimeMs = new Date(session.startTime).getTime();
+  const totalDurationMs = now - startTimeMs;
+
+  const historicalSession: HistoricalSession = {
+    id: session.id,
+    projectName: session.projectName,
+    cwd: session.cwd,
+    startTime: session.startTime,
+    endTime: new Date(now).toISOString(),
+    lastActivity: session.lastActivity,
+    lastTool: session.lastTool,
+    toolCount: session.toolCount,
+    totalDurationMs,
+  };
+
+  const history = await loadSessionHistory();
+
+  // Add to beginning (most recent first)
+  history.unshift(historicalSession);
+
+  // Clean up old entries (older than 7 days)
+  const cutoffTime = now - SESSION_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+  const filteredHistory = history.filter((h) => {
+    const endTime = new Date(h.endTime).getTime();
+    return endTime > cutoffTime;
+  });
+
+  await saveSessionHistory(filteredHistory);
+}
+
 // Update daily stats based on session state changes
 async function updateDailyStats(
   newSessions: Session[],
@@ -162,6 +224,11 @@ async function updateDailyStats(
         // Clean up tracking for ended session
         sessionStateTracking.delete(oldSession.id);
       }
+
+      // Add session to history
+      addSessionToHistory(oldSession).catch((err) => {
+        console.error("[Claude Blocker] Failed to add session to history:", err);
+      });
     }
   }
 
@@ -471,6 +538,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     Promise.all(dates.map((d) => loadDailyStats(d)))
       .then((statsArray) => {
         sendResponse({ success: true, stats: statsArray });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: String(err) });
+      });
+    return true;
+  }
+
+  if (message.type === "GET_SESSION_HISTORY") {
+    loadSessionHistory()
+      .then((history) => {
+        sendResponse({ success: true, history });
       })
       .catch((err) => {
         sendResponse({ success: false, error: String(err) });

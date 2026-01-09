@@ -40,6 +40,10 @@
           Sessions
           <span class="tab-badge" id="sessions-badge">0</span>
         </button>
+        <button class="tab-btn" data-tab="history">
+          History
+          <span class="tab-badge" id="history-badge">0</span>
+        </button>
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="about">About</button>
       </nav>
@@ -103,6 +107,29 @@
               <div class="timeline-tracks" id="timeline-tracks">
                 <div class="no-timeline">No activity to display</div>
               </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-content" id="tab-history">
+          <section class="history-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Session History</h2>
+                <p class="section-desc">Past sessions from the last 7 days</p>
+              </div>
+              <div class="filter-dropdown">
+                <select id="history-filter">
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="week">This Week</option>
+                </select>
+              </div>
+            </div>
+            <div class="history-list" id="history-list">
+              <div class="no-history">No session history yet</div>
             </div>
           </section>
         </div>

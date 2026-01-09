@@ -14,6 +14,19 @@ interface Session {
   waitingForInputSince?: string;
 }
 
+// Historical session - session that has ended
+interface HistoricalSession {
+  id: string;
+  projectName: string;
+  cwd?: string;
+  startTime: string;
+  endTime: string;
+  lastActivity: string;
+  lastTool?: string;
+  toolCount: number;
+  totalDurationMs: number;
+}
+
 interface ExtensionState {
   blocked: boolean;
   serverConnected: boolean;
@@ -59,6 +72,7 @@ interface SessionActivity {
 }
 
 type SortMode = "status" | "project" | "activity" | "uptime";
+type HistoryFilter = "all" | "today" | "yesterday" | "week";
 
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   enabled: true,
@@ -98,6 +112,11 @@ const sessionsList = document.getElementById("sessions-list") as HTMLElement;
 const sessionsBadge = document.getElementById("sessions-badge") as HTMLElement;
 const sessionSort = document.getElementById("session-sort") as HTMLSelectElement;
 
+// History panel elements
+const historyList = document.getElementById("history-list") as HTMLElement;
+const historyBadge = document.getElementById("history-badge") as HTMLElement;
+const historyFilter = document.getElementById("history-filter") as HTMLSelectElement;
+
 // Timeline elements
 const timelineTimeAxis = document.getElementById("timeline-time-axis") as HTMLElement;
 const timelineTracks = document.getElementById("timeline-tracks") as HTMLElement;
@@ -126,6 +145,8 @@ let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
+let currentHistoryFilter: HistoryFilter = "all";
+let sessionHistory: HistoricalSession[] = [];
 
 // Activity tracking - maps session ID to activity history
 const sessionActivities: Map<string, SessionActivity> = new Map();
@@ -147,6 +168,70 @@ function formatTimeLabel(date: Date): string {
   const ampm = hours >= 12 ? "PM" : "AM";
   const displayHours = hours % 12 || 12;
   return `${displayHours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+}
+
+// Format relative time for history
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  // Check if same day
+  const isToday = date.toDateString() === now.toDateString();
+
+  // Check if yesterday
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const timeStr = formatTimeLabel(date);
+
+  if (diffMinutes < 1) {
+    return "Just now";
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  } else if (isToday) {
+    return `Today ${timeStr}`;
+  } else if (isYesterday) {
+    return `Yesterday ${timeStr}`;
+  } else if (diffDays < 7) {
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return `${dayNames[date.getDay()]} ${timeStr}`;
+  } else {
+    const month = date.toLocaleString("default", { month: "short" });
+    const day = date.getDate();
+    return `${month} ${day} ${timeStr}`;
+  }
+}
+
+// Get date category for filtering
+function getDateCategory(dateString: string): "today" | "yesterday" | "week" | "older" {
+  const date = new Date(dateString);
+  const now = new Date();
+
+  // Check if same day
+  if (date.toDateString() === now.toDateString()) {
+    return "today";
+  }
+
+  // Check if yesterday
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "yesterday";
+  }
+
+  // Check if within 7 days
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 7) {
+    return "week";
+  }
+
+  return "older";
 }
 
 // Truncate path for display
@@ -193,6 +278,19 @@ async function loadNotificationConfig(): Promise<NotificationConfig> {
         resolve({ ...DEFAULT_NOTIFICATION_CONFIG, ...result.notificationConfig });
       } else {
         resolve(DEFAULT_NOTIFICATION_CONFIG);
+      }
+    });
+  });
+}
+
+// Load session history from service worker
+async function loadSessionHistory(): Promise<HistoricalSession[]> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_SESSION_HISTORY" }, (response) => {
+      if (response?.success && Array.isArray(response.history)) {
+        resolve(response.history);
+      } else {
+        resolve([]);
       }
     });
   });
@@ -312,6 +410,27 @@ function sortSessions(sessions: Session[]): Session[] {
     default:
       return sorted;
   }
+}
+
+// Filter history based on current filter
+function filterHistory(history: HistoricalSession[]): HistoricalSession[] {
+  if (currentHistoryFilter === "all") {
+    return history;
+  }
+
+  return history.filter((session) => {
+    const category = getDateCategory(session.endTime);
+    switch (currentHistoryFilter) {
+      case "today":
+        return category === "today";
+      case "yesterday":
+        return category === "yesterday";
+      case "week":
+        return category === "today" || category === "yesterday" || category === "week";
+      default:
+        return true;
+    }
+  });
 }
 
 // Copy session ID to clipboard with feedback
@@ -609,6 +728,113 @@ function renderSessions(sessions: Session[]): void {
   renderTimeline(sessions);
 }
 
+// Render history list
+function renderHistory(): void {
+  const filtered = filterHistory(sessionHistory);
+
+  // Update badge
+  historyBadge.textContent = String(sessionHistory.length);
+  if (sessionHistory.length > 0) {
+    historyBadge.classList.add("has-sessions");
+  } else {
+    historyBadge.classList.remove("has-sessions");
+  }
+
+  if (filtered.length === 0) {
+    if (sessionHistory.length === 0) {
+      historyList.innerHTML = '<div class="no-history">No session history yet</div>';
+    } else {
+      historyList.innerHTML = '<div class="no-history">No sessions match the selected filter</div>';
+    }
+    return;
+  }
+
+  historyList.innerHTML = filtered.map((session, index) => {
+    const duration = formatDuration(session.totalDurationMs);
+    const endTimeRelative = formatRelativeTime(session.endTime);
+
+    // Add cwd display if available
+    const cwdHtml = session.cwd
+      ? `<div class="history-cwd" title="${session.cwd}">${truncatePath(session.cwd)}</div>`
+      : "";
+
+    // Quick action buttons
+    const copyIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>`;
+
+    const folderIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>`;
+
+    const actionsHtml = `
+      <div class="history-actions">
+        <button class="history-action-btn copy-history-id-btn" data-history-index="${index}" title="Copy full session ID">
+          ${copyIcon}
+        </button>
+        ${session.cwd ? `
+        <button class="history-action-btn open-history-folder-btn" data-history-index="${index}" title="Open in Finder">
+          ${folderIcon}
+        </button>
+        ` : ""}
+      </div>
+    `;
+
+    const toolHtml = session.lastTool
+      ? `<span class="history-tool">${session.lastTool}</span>` : "";
+
+    return `
+      <div class="history-card">
+        <div class="history-info">
+          <div class="history-name">${session.projectName}</div>
+          ${cwdHtml}
+          <div class="history-meta">
+            <span class="history-time">${endTimeRelative}</span>
+            <span class="history-duration">${duration}</span>
+            ${toolHtml}
+          </div>
+        </div>
+        ${actionsHtml}
+        <span class="history-id" title="Click to copy">${session.id.substring(0, 8)}</span>
+      </div>
+    `;
+  }).join("");
+
+  // Add click handlers for quick action buttons
+  historyList.querySelectorAll(".copy-history-id-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.historyIndex || "0", 10);
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copySessionId(filtered[index].id, button);
+    });
+  });
+
+  historyList.querySelectorAll(".open-history-folder-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.historyIndex || "0", 10);
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const session = filtered[index];
+      if (session.cwd) {
+        openProjectFolder(session.cwd);
+      }
+    });
+  });
+
+  // Add click to copy session ID
+  historyList.querySelectorAll(".history-id").forEach((el, i) => {
+    el.addEventListener("click", () => {
+      navigator.clipboard.writeText(filtered[i].id);
+      el.textContent = "Copied!";
+      setTimeout(() => {
+        el.textContent = filtered[i].id.substring(0, 8);
+      }, 1000);
+    });
+  });
+}
+
 // Update overlay settings UI
 function updateOverlaySettingsUI(): void {
   overlayEnabled.checked = currentOverlayConfig.enabled;
@@ -814,6 +1040,12 @@ function refreshState(): void {
   });
 }
 
+// Refresh history from service worker
+async function refreshHistory(): Promise<void> {
+  sessionHistory = await loadSessionHistory();
+  renderHistory();
+}
+
 // Tab switching
 function switchTab(tabName: string): void {
   // Update buttons
@@ -833,6 +1065,11 @@ function switchTab(tabName: string): void {
       content.classList.remove("active");
     }
   });
+
+  // Refresh history when switching to history tab
+  if (tabName === "history") {
+    refreshHistory();
+  }
 }
 
 // Event listeners
@@ -869,6 +1106,12 @@ sessionSort.addEventListener("change", () => {
   }
 });
 
+// History filter event listener
+historyFilter.addEventListener("change", () => {
+  currentHistoryFilter = historyFilter.value as HistoryFilter;
+  renderHistory();
+});
+
 // Overlay settings event listeners
 overlayEnabled.addEventListener("change", handleOverlayChange);
 overlayScope.addEventListener("change", handleOverlayChange);
@@ -893,11 +1136,13 @@ async function init(): Promise<void> {
   currentDomains = await loadDomains();
   currentOverlayConfig = await loadOverlayConfig();
   currentNotificationConfig = await loadNotificationConfig();
+  sessionHistory = await loadSessionHistory();
 
   renderDomains();
   updateOverlaySettingsUI();
   updateNotificationSettingsUI();
   renderTimelineAxis(); // Initialize timeline axis
+  renderHistory(); // Initialize history list
   refreshState();
 }
 
