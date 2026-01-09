@@ -290,6 +290,15 @@ function getPositionStyles(): string {
   }
 }
 
+function getSessionsListPositionStyles(): string {
+  const pos = overlayConfig.position;
+  const verticalPos = pos.includes("bottom")
+    ? "bottom: 100%; margin-bottom: 8px;"
+    : "top: 100%; margin-top: 8px;";
+  const horizontalPos = pos.includes("right") ? "right" : "left";
+  return `${verticalPos} ${horizontalPos}: 0;`;
+}
+
 function createOverlay(): void {
   if (getOverlay()) return;
 
@@ -310,7 +319,7 @@ function createOverlay(): void {
       .status-dot.idle { background: #666; }
       .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
       .label { color: #999; font-size: 12px; font-weight: 500; }
-      .sessions-list { display: none; position: absolute; top: 100%; ${overlayConfig.position.includes("right") ? "right" : "left"}: 0; margin-top: 8px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 300px; max-width: 380px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+      .sessions-list { display: none; position: absolute; ${getSessionsListPositionStyles()} background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 300px; max-width: 380px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
       .session-item { padding: 12px; border-bottom: 1px solid #2a2a2a; }
       .session-item:last-child { border-bottom: none; }
       .session-header { display: flex; align-items: center; gap: 8px; }

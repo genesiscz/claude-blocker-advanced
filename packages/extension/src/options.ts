@@ -1207,7 +1207,7 @@ function updateSubTogglesState(): void {
 
 // Update preview position based on settings
 function updatePreviewPosition(): void {
-  const preview = overlayPreview.querySelector(".preview-overlay") as HTMLElement;
+  const preview = overlayPreview as HTMLElement;
   if (!preview) return;
 
   // Reset all positions
