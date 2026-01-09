@@ -121,6 +121,72 @@ function getStatusLabel(status: Session["status"]): string {
   }
 }
 
+const SERVER_URL = "http://localhost:8765";
+
+// Handle copy session ID to clipboard
+async function copySessionId(sessionId: string, button: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(sessionId);
+    button.classList.add("copied");
+    button.title = "Copied!";
+    setTimeout(() => {
+      button.classList.remove("copied");
+      button.title = "Copy session ID";
+    }, 1500);
+  } catch (error) {
+    console.error("Failed to copy:", error);
+  }
+}
+
+// Handle open in terminal action
+async function openInTerminal(cwd: string, sessionId: string): Promise<void> {
+  const command = `claude --resume ${sessionId}`;
+
+  // Load terminal config
+  const config = await new Promise<{ app?: string }>((resolve) => {
+    chrome.storage.sync.get(["terminalConfig"], (result) => {
+      resolve(result.terminalConfig || { app: "warp" });
+    });
+  });
+
+  try {
+    const response = await fetch(`${SERVER_URL}/action/open-terminal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: cwd,
+        command,
+        app: config.app || "warp",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to open terminal: ${response.statusText}`);
+    }
+  } catch (err) {
+    // Fallback: copy full command with cd
+    await navigator.clipboard.writeText(`cd "${cwd}" && ${command}`);
+    console.log("Terminal action fell back to copying command to clipboard");
+  }
+}
+
+// Handle open folder action
+async function openFolder(cwd: string): Promise<void> {
+  try {
+    const response = await fetch(`${SERVER_URL}/action/open-finder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: cwd }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to open folder: ${response.statusText}`);
+    }
+  } catch (err) {
+    console.error("Failed to open folder:", err);
+  }
+}
+
 function renderSession(session: Session): HTMLElement {
   const now = Date.now();
   const startTime = new Date(session.startTime).getTime();
@@ -160,11 +226,57 @@ function renderSession(session: Session): HTMLElement {
       <span class="session-name">${session.projectName}</span>
       <span class="session-uptime">${formatDuration(uptime)}</span>
     </div>
+    <div class="session-actions">
+      <button class="action-btn copy-btn" title="Copy session ID" data-session-id="${session.id}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+      ${session.cwd ? `
+        <button class="action-btn folder-btn" title="Open folder" data-cwd="${session.cwd}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button class="action-btn terminal-btn" title="Open in terminal" data-cwd="${session.cwd}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+        </button>
+      ` : ""}
+    </div>
     <div class="session-details">
       ${waitInfo}
     </div>
     ${toolsHtml}
   `;
+
+  // Add event listeners for action buttons
+  const copyBtn = el.querySelector(".copy-btn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copySessionId(session.id, copyBtn as HTMLElement);
+    });
+  }
+
+  const folderBtn = el.querySelector(".folder-btn");
+  if (folderBtn && session.cwd) {
+    folderBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openFolder(session.cwd!);
+    });
+  }
+
+  const terminalBtn = el.querySelector(".terminal-btn");
+  if (terminalBtn && session.cwd) {
+    terminalBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openInTerminal(session.cwd!, session.id);
+    });
+  }
 
   return el;
 }

@@ -322,3 +322,48 @@ body {
 .settings-btn svg {
   opacity: 0.4;
 }
+
+/* Session action buttons */
+.session-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 14px;
+  margin-top: 6px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: #2c2c2e;
+  border: none;
+  border-radius: 5px;
+  color: #777;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn:hover {
+  background: #3c3c3e;
+  color: #fff;
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+}
+
+.action-btn.copy-btn.copied {
+  background: rgba(48, 209, 88, 0.2);
+  color: #30d158;
+}
+
+.action-btn.folder-btn:hover {
+  color: #ffd60a;
+}
+
+.action-btn.terminal-btn:hover {
+  color: #30d158;
+}
