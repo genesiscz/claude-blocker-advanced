@@ -115,25 +115,33 @@ function formatRelativeTime(ms: number): string {
   return `-${seconds}s`;
 }
 
-// Format tool label with truncated input info
-function formatToolLabel(tool: ToolCall): string {
-  const { name, input } = tool;
-  if (!input) return name;
+// Format tool detail info (for vertical layout)
+function formatToolDetail(tool: ToolCall): string {
+  const { input } = tool;
+  if (!input) return "";
 
   if (input.file_path) {
-    const filename = input.file_path.split("/").pop() ?? input.file_path;
-    const truncated = filename.length > 15 ? filename.slice(0, 12) + "…" : filename;
-    return `${name}: ${truncated}`;
+    // Show filename with optional path hint
+    const parts = input.file_path.split("/");
+    if (parts.length > 2) {
+      return `…/${parts.slice(-2).join("/")}`;
+    }
+    return input.file_path;
   }
   if (input.command) {
-    const firstWord = input.command.split(" ")[0];
-    return `${name}: ${firstWord}`;
+    // Show first 35 chars of command
+    const truncated = input.command.length > 35 ? input.command.slice(0, 35) + "…" : input.command;
+    return truncated;
   }
   if (input.pattern) {
-    const truncated = input.pattern.length > 10 ? input.pattern.slice(0, 10) + "…" : input.pattern;
-    return `${name}: "${truncated}"`;
+    const truncated = input.pattern.length > 25 ? input.pattern.slice(0, 25) + "…" : input.pattern;
+    return `"${truncated}"`;
   }
-  return name;
+  if (input.description) {
+    const truncated = input.description.length > 35 ? input.description.slice(0, 35) + "…" : input.description;
+    return truncated;
+  }
+  return "";
 }
 
 // ============ BLOCKING MODAL ============
@@ -302,18 +310,24 @@ function createOverlay(): void {
       .status-dot.idle { background: #666; }
       .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
       .label { color: #999; font-size: 12px; font-weight: 500; }
-      .sessions-list { display: none; position: absolute; top: 100%; ${overlayConfig.position.includes("right") ? "right" : "left"}: 0; margin-top: 8px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 200px; max-width: 280px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-      .session-item { padding: 10px 12px; border-bottom: 1px solid #2a2a2a; }
+      .sessions-list { display: none; position: absolute; top: 100%; ${overlayConfig.position.includes("right") ? "right" : "left"}: 0; margin-top: 8px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 300px; max-width: 380px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+      .session-item { padding: 12px; border-bottom: 1px solid #2a2a2a; }
       .session-item:last-child { border-bottom: none; }
       .session-header { display: flex; align-items: center; gap: 8px; }
       .session-name { flex: 1; color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .session-info { color: #666; font-size: 11px; }
       .session-wait { color: #ffd60a; font-size: 10px; margin-left: 4px; }
-      .session-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; margin-left: 16px; }
-      .tool-badge { font-size: 10px; padding: 2px 5px; background: #2a2a2a; border-radius: 4px; color: #777; font-family: ui-monospace, monospace; white-space: nowrap; }
-      .tool-badge.latest { color: #999; background: #333; }
-      .tool-time { font-size: 9px; color: #555; margin-left: 2px; }
-      .tool-badge.latest .tool-time { color: #666; }
+      .session-meta { display: flex; gap: 8px; margin-top: 4px; margin-left: 16px; }
+      .session-cwd { font-size: 10px; color: #555; font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+      .session-tools { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; margin-left: 16px; padding: 8px; background: #222; border-radius: 6px; }
+      .tool-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #666; }
+      .tool-row.latest { color: #888; }
+      .tool-name { font-family: ui-monospace, monospace; color: #777; flex-shrink: 0; min-width: 55px; }
+      .tool-row.latest .tool-name { color: #30d158; }
+      .tool-detail { flex: 1; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, monospace; font-size: 10px; }
+      .tool-row.latest .tool-detail { color: #666; }
+      .tool-time { font-size: 10px; color: #444; min-width: 30px; text-align: right; }
+      .tool-row.latest .tool-time { color: #555; }
       .no-sessions { padding: 16px; text-align: center; color: #666; font-size: 12px; }
     </style>
     <div class="overlay">
@@ -389,17 +403,30 @@ function updateOverlay(state: PublicState): void {
         const dotClass =
           s.status === "working" ? "working" : s.status === "waiting_for_input" ? "waiting" : "idle";
 
-        // Render recent tools (show up to 3 in overlay for compactness)
+        // Render cwd if available
+        let cwdHtml = "";
+        if (s.cwd) {
+          const parts = s.cwd.split("/");
+          const shortCwd = parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : s.cwd;
+          cwdHtml = `<div class="session-meta"><span class="session-cwd" title="${s.cwd}">${shortCwd}</span></div>`;
+        }
+
+        // Render recent tools with vertical layout
         let toolsHtml = "";
         if (s.recentTools && s.recentTools.length > 0) {
-          const toolBadges = s.recentTools.slice(0, 3).map((tool, i) => {
+          const toolRows = s.recentTools.slice(0, 5).map((tool, i) => {
             const timeSince = now - new Date(tool.timestamp).getTime();
             const timeStr = formatRelativeTime(timeSince);
-            const label = formatToolLabel(tool);
+            const detail = formatToolDetail(tool);
             const latestClass = i === 0 ? "latest" : "";
-            return `<span class="tool-badge ${latestClass}">${label}<span class="tool-time">${timeStr}</span></span>`;
+            const detailHtml = detail ? `<span class="tool-detail" title="${detail}">${detail}</span>` : "";
+            return `<div class="tool-row ${latestClass}">
+              <span class="tool-name">${tool.name}</span>
+              ${detailHtml}
+              <span class="tool-time">${timeStr}</span>
+            </div>`;
           });
-          toolsHtml = `<div class="session-tools">${toolBadges.join("")}</div>`;
+          toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
         }
 
         return `
@@ -409,6 +436,7 @@ function updateOverlay(state: PublicState): void {
               <span class="session-name">${s.projectName}</span>
               <span class="session-info">${uptime}${waitHtml}</span>
             </div>
+            ${cwdHtml}
             ${toolsHtml}
           </div>
         `;
