@@ -569,6 +569,37 @@ async function openProjectFolder(cwd: string): Promise<void> {
   }
 }
 
+// Open project in terminal and run resume command
+async function openInTerminal(cwd: string, sessionId: string): Promise<void> {
+  const command = `claude --resume ${sessionId}`;
+  try {
+    const response = await fetch("http://localhost:8765/action/open-terminal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: cwd,
+        command,
+        app: currentTerminalConfig.app,
+      }),
+    });
+    if (!response.ok) throw new Error("Failed to open terminal");
+  } catch {
+    // Fallback: copy command to clipboard
+    await navigator.clipboard.writeText(command);
+  }
+}
+
+// Show temporary feedback on a button
+function showButtonFeedback(button: HTMLButtonElement, message: string): void {
+  const originalHtml = button.innerHTML;
+  button.innerHTML = `<span style="font-size: 10px">${message}</span>`;
+  button.disabled = true;
+  setTimeout(() => {
+    button.innerHTML = originalHtml;
+    button.disabled = false;
+  }, 1000);
+}
+
 // Update session activity tracking
 function updateSessionActivity(session: Session): void {
   const now = Date.now();
@@ -784,6 +815,16 @@ function renderSessions(sessions: Session[]): void {
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
     </svg>`;
 
+    const terminalIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="4,17 10,11 4,5"/>
+      <line x1="12" y1="19" x2="20" y2="19"/>
+    </svg>`;
+
+    const commandIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="8,6 2,12 8,18"/>
+      <polyline points="16,6 22,12 16,18"/>
+    </svg>`;
+
     const actionsHtml = `
       <div class="session-actions">
         <button class="session-action-btn copy-id-btn" data-session-index="${index}" title="Copy full session ID">
@@ -793,7 +834,13 @@ function renderSessions(sessions: Session[]): void {
         <button class="session-action-btn open-folder-btn" data-session-index="${index}" title="Open in Finder">
           ${folderIcon}
         </button>
+        <button class="session-action-btn open-terminal-btn" data-session-index="${index}" title="Resume in Terminal">
+          ${terminalIcon}
+        </button>
         ` : ""}
+        <button class="session-action-btn copy-command-btn" data-session-index="${index}" title="Copy resume command">
+          ${commandIcon}
+        </button>
       </div>
     `;
 
@@ -844,6 +891,30 @@ function renderSessions(sessions: Session[]): void {
       if (session.cwd) {
         openProjectFolder(session.cwd);
       }
+    });
+  });
+
+  sessionsList.querySelectorAll(".open-terminal-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.sessionIndex || "0", 10);
+    button.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const session = sorted[index];
+      if (session.cwd) {
+        await openInTerminal(session.cwd, session.id);
+      }
+    });
+  });
+
+  sessionsList.querySelectorAll(".copy-command-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.sessionIndex || "0", 10);
+    button.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const session = sorted[index];
+      const command = `claude --resume ${session.id}`;
+      await navigator.clipboard.writeText(command);
+      showButtonFeedback(button, "Copied!");
     });
   });
 

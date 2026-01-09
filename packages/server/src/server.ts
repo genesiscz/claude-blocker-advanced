@@ -79,6 +79,66 @@ export function startServer(port: number = DEFAULT_PORT): void {
       return;
     }
 
+    // Action: Open in Terminal (macOS)
+    if (req.method === "POST" && url.pathname === "/action/open-terminal") {
+      try {
+        const body = await parseBody(req);
+        const { path, command, app } = JSON.parse(body) as {
+          path: string;
+          command: string;
+          app: "warp" | "iterm2" | "terminal" | "ghostty";
+        };
+
+        if (!path || !command || !app) {
+          sendJson(res, { success: false, error: "path, command, and app are required" }, 400);
+          return;
+        }
+
+        const escapedPath = path.replace(/'/g, "'\\''");
+        const escapedCommand = command.replace(/'/g, "'\\''");
+        const fullCommand = `cd '${escapedPath}' && ${escapedCommand}`;
+
+        switch (app) {
+          case "warp":
+            // Warp: Use LaunchServices URL scheme
+            execSync(
+              `osascript -e 'tell application "Warp" to activate' -e 'delay 0.3' -e 'tell application "System Events" to tell process "Warp" to keystroke "t" using command down' -e 'delay 0.2' -e 'tell application "System Events" to tell process "Warp" to keystroke "${fullCommand.replace(/"/g, '\\"')}"' -e 'tell application "System Events" to tell process "Warp" to key code 36'`
+            );
+            break;
+          case "iterm2":
+            execSync(
+              `osascript -e 'tell application "iTerm2"
+                activate
+                create window with default profile
+                tell current session of current window
+                  write text "${fullCommand.replace(/"/g, '\\"')}"
+                end tell
+              end tell'`
+            );
+            break;
+          case "terminal":
+            execSync(
+              `osascript -e 'tell application "Terminal" to do script "${fullCommand.replace(/"/g, '\\"')}"'`
+            );
+            break;
+          case "ghostty":
+            // Ghostty: Open app and use System Events
+            execSync(
+              `osascript -e 'tell application "Ghostty" to activate' -e 'delay 0.3' -e 'tell application "System Events" to tell process "Ghostty" to keystroke "t" using command down' -e 'delay 0.2' -e 'tell application "System Events" to tell process "Ghostty" to keystroke "${fullCommand.replace(/"/g, '\\"')}"' -e 'tell application "System Events" to tell process "Ghostty" to key code 36'`
+            );
+            break;
+          default:
+            sendJson(res, { success: false, error: `Unknown terminal app: ${app}` }, 400);
+            return;
+        }
+
+        sendJson(res, { success: true });
+      } catch (error) {
+        sendJson(res, { success: false, error: String(error) }, 500);
+      }
+      return;
+    }
+
     // 404 for unknown routes
     sendJson(res, { error: "Not found" }, 404);
   });
