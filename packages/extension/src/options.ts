@@ -281,6 +281,28 @@ function sortSessions(sessions: Session[]): Session[] {
   }
 }
 
+// Copy session ID to clipboard with feedback
+function copySessionId(sessionId: string, button: HTMLButtonElement): void {
+  navigator.clipboard.writeText(sessionId).then(() => {
+    // Show "Copied!" feedback
+    const originalTitle = button.title;
+    button.title = "Copied!";
+    button.classList.add("copied");
+    setTimeout(() => {
+      button.title = originalTitle;
+      button.classList.remove("copied");
+    }, 1500);
+  });
+}
+
+// Open project folder in Finder
+function openProjectFolder(cwd: string): void {
+  // Open using file:// URL in a new tab
+  // Note: This may not work in all browsers due to security restrictions
+  // but Chrome allows it for extension pages
+  window.open(`file://${cwd}`, "_blank");
+}
+
 // Render sessions list
 function renderSessions(sessions: Session[]): void {
   lastSessions = sessions;
@@ -301,7 +323,7 @@ function renderSessions(sessions: Session[]): void {
   const now = Date.now();
   const sorted = sortSessions(sessions);
 
-  sessionsList.innerHTML = sorted.map(session => {
+  sessionsList.innerHTML = sorted.map((session, index) => {
     const uptime = formatDuration(now - new Date(session.startTime).getTime());
     const dotClass = session.status === "working" ? "working"
       : session.status === "waiting_for_input" ? "waiting" : "idle";
@@ -321,6 +343,29 @@ function renderSessions(sessions: Session[]): void {
       ? `<div class="session-cwd" title="${session.cwd}">${truncatePath(session.cwd)}</div>`
       : "";
 
+    // Quick action buttons
+    const copyIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>`;
+
+    const folderIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>`;
+
+    const actionsHtml = `
+      <div class="session-actions">
+        <button class="session-action-btn copy-id-btn" data-session-index="${index}" title="Copy full session ID">
+          ${copyIcon}
+        </button>
+        ${session.cwd ? `
+        <button class="session-action-btn open-folder-btn" data-session-index="${index}" title="Open in Finder">
+          ${folderIcon}
+        </button>
+        ` : ""}
+      </div>
+    `;
+
     return `
       <div class="session-card">
         <span class="session-dot ${dotClass}"></span>
@@ -333,12 +378,35 @@ function renderSessions(sessions: Session[]): void {
           </div>
         </div>
         ${toolHtml}
+        ${actionsHtml}
         <span class="session-id" title="Click to copy">${session.id.substring(0, 8)}</span>
       </div>
     `;
   }).join("");
 
-  // Add click to copy session ID
+  // Add click handlers for quick action buttons
+  sessionsList.querySelectorAll(".copy-id-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.sessionIndex || "0", 10);
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copySessionId(sorted[index].id, button);
+    });
+  });
+
+  sessionsList.querySelectorAll(".open-folder-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.sessionIndex || "0", 10);
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const session = sorted[index];
+      if (session.cwd) {
+        openProjectFolder(session.cwd);
+      }
+    });
+  });
+
+  // Add click to copy session ID (existing functionality)
   sessionsList.querySelectorAll(".session-id").forEach((el, i) => {
     el.addEventListener("click", () => {
       navigator.clipboard.writeText(sorted[i].id);
