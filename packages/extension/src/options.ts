@@ -45,6 +45,19 @@ interface NotificationConfig {
   onDisconnected: boolean;
 }
 
+// Timeline activity tracking
+interface ActivitySegment {
+  status: "idle" | "working" | "waiting_for_input";
+  startTime: number;
+  endTime: number;
+}
+
+interface SessionActivity {
+  sessionId: string;
+  projectName: string;
+  segments: ActivitySegment[];
+}
+
 type SortMode = "status" | "project" | "activity" | "uptime";
 
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
@@ -61,6 +74,10 @@ const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
   onFinished: true,
   onDisconnected: true,
 };
+
+// Timeline constants
+const TIMELINE_HOURS = 4; // Show last 4 hours
+const TIMELINE_MS = TIMELINE_HOURS * 60 * 60 * 1000;
 
 // Elements
 const statusIndicator = document.getElementById("status-indicator") as HTMLElement;
@@ -80,6 +97,10 @@ const bypassStatus = document.getElementById("bypass-status") as HTMLElement;
 const sessionsList = document.getElementById("sessions-list") as HTMLElement;
 const sessionsBadge = document.getElementById("sessions-badge") as HTMLElement;
 const sessionSort = document.getElementById("session-sort") as HTMLSelectElement;
+
+// Timeline elements
+const timelineTimeAxis = document.getElementById("timeline-time-axis") as HTMLElement;
+const timelineTracks = document.getElementById("timeline-tracks") as HTMLElement;
 
 // Overlay settings elements
 const overlayEnabled = document.getElementById("overlay-enabled") as HTMLInputElement;
@@ -106,6 +127,9 @@ let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
 
+// Activity tracking - maps session ID to activity history
+const sessionActivities: Map<string, SessionActivity> = new Map();
+
 // Format duration
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -114,6 +138,15 @@ function formatDuration(ms: number): string {
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
   if (minutes > 0) return `${minutes}m`;
   return `${seconds}s`;
+}
+
+// Format time for timeline axis
+function formatTimeLabel(date: Date): string {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${minutes.toString().padStart(2, "0")} ${ampm}`;
 }
 
 // Truncate path for display
@@ -303,6 +336,160 @@ function openProjectFolder(cwd: string): void {
   window.open(`file://${cwd}`, "_blank");
 }
 
+// Update session activity tracking
+function updateSessionActivity(session: Session): void {
+  const now = Date.now();
+  const activity = sessionActivities.get(session.id);
+
+  if (!activity) {
+    // New session - create initial activity
+    sessionActivities.set(session.id, {
+      sessionId: session.id,
+      projectName: session.projectName,
+      segments: [{
+        status: session.status,
+        startTime: new Date(session.startTime).getTime(),
+        endTime: now,
+      }],
+    });
+    return;
+  }
+
+  // Update project name in case it changed
+  activity.projectName = session.projectName;
+
+  const lastSegment = activity.segments[activity.segments.length - 1];
+
+  if (lastSegment.status === session.status) {
+    // Same status - extend the current segment
+    lastSegment.endTime = now;
+  } else {
+    // Status changed - close current segment and start new one
+    lastSegment.endTime = now;
+    activity.segments.push({
+      status: session.status,
+      startTime: now,
+      endTime: now,
+    });
+  }
+
+  // Clean up old segments (older than timeline window)
+  const cutoff = now - TIMELINE_MS;
+  activity.segments = activity.segments.filter(seg => seg.endTime > cutoff);
+
+  // Adjust start time of first segment if it starts before cutoff
+  if (activity.segments.length > 0 && activity.segments[0].startTime < cutoff) {
+    activity.segments[0].startTime = cutoff;
+  }
+}
+
+// Render timeline time axis
+function renderTimelineAxis(): void {
+  const now = Date.now();
+  const startTime = now - TIMELINE_MS;
+
+  // Create 5 time labels (every hour for 4 hours)
+  const labels: string[] = [];
+  for (let i = 0; i <= TIMELINE_HOURS; i++) {
+    const time = new Date(startTime + (i * 60 * 60 * 1000));
+    labels.push(formatTimeLabel(time));
+  }
+
+  timelineTimeAxis.innerHTML = labels
+    .map(label => `<span class="timeline-time-label">${label}</span>`)
+    .join("");
+}
+
+// Render timeline for all sessions
+function renderTimeline(sessions: Session[]): void {
+  // Update activity tracking for all sessions
+  for (const session of sessions) {
+    updateSessionActivity(session);
+  }
+
+  // Clean up activities for sessions that no longer exist
+  const activeSessionIds = new Set(sessions.map(s => s.id));
+  for (const [sessionId, activity] of sessionActivities) {
+    if (!activeSessionIds.has(sessionId)) {
+      // Keep ended sessions for a bit to show their final state
+      const lastSegment = activity.segments[activity.segments.length - 1];
+      if (lastSegment) {
+        lastSegment.endTime = Date.now();
+      }
+    }
+  }
+
+  // Render time axis
+  renderTimelineAxis();
+
+  // Get activities to render (active sessions + recently ended)
+  const now = Date.now();
+  const cutoff = now - TIMELINE_MS;
+  const activitiesToRender: SessionActivity[] = [];
+
+  for (const activity of sessionActivities.values()) {
+    // Include if has segments within timeline window
+    const hasRecentActivity = activity.segments.some(seg => seg.endTime > cutoff);
+    if (hasRecentActivity) {
+      activitiesToRender.push(activity);
+    }
+  }
+
+  if (activitiesToRender.length === 0) {
+    timelineTracks.innerHTML = '<div class="no-timeline">No activity to display</div>';
+    return;
+  }
+
+  // Sort by project name
+  activitiesToRender.sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+  // Render tracks
+  timelineTracks.innerHTML = activitiesToRender.map(activity => {
+    // Calculate total duration
+    const totalDuration = activity.segments.reduce((sum, seg) => {
+      const segStart = Math.max(seg.startTime, cutoff);
+      const segEnd = Math.min(seg.endTime, now);
+      return sum + Math.max(0, segEnd - segStart);
+    }, 0);
+
+    // Render segments
+    const segmentsHtml = activity.segments.map(seg => {
+      const segStart = Math.max(seg.startTime, cutoff);
+      const segEnd = Math.min(seg.endTime, now);
+      const duration = segEnd - segStart;
+
+      if (duration <= 0) return "";
+
+      // Calculate position and width as percentage of timeline
+      const leftPercent = ((segStart - cutoff) / TIMELINE_MS) * 100;
+      const widthPercent = (duration / TIMELINE_MS) * 100;
+
+      const statusClass = seg.status === "waiting_for_input" ? "waiting" : seg.status;
+      const durationText = formatDuration(duration);
+
+      return `
+        <div class="timeline-segment ${statusClass}"
+             style="position: absolute; left: ${leftPercent}%; width: ${widthPercent}%;"
+             title="${statusClass}: ${durationText}">
+          <span class="timeline-segment-tooltip">${statusClass}: ${durationText}</span>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="timeline-track">
+        <div class="timeline-track-label">
+          <span class="track-project">${activity.projectName}</span>
+          <span class="track-duration">${formatDuration(totalDuration)}</span>
+        </div>
+        <div class="timeline-bar">
+          ${segmentsHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 // Render sessions list
 function renderSessions(sessions: Session[]): void {
   lastSessions = sessions;
@@ -317,6 +504,7 @@ function renderSessions(sessions: Session[]): void {
 
   if (sessions.length === 0) {
     sessionsList.innerHTML = '<div class="no-sessions">No active sessions</div>';
+    renderTimeline([]);
     return;
   }
 
@@ -416,6 +604,9 @@ function renderSessions(sessions: Session[]): void {
       }, 1000);
     });
   });
+
+  // Render timeline
+  renderTimeline(sessions);
 }
 
 // Update overlay settings UI
@@ -706,6 +897,7 @@ async function init(): Promise<void> {
   renderDomains();
   updateOverlaySettingsUI();
   updateNotificationSettingsUI();
+  renderTimelineAxis(); // Initialize timeline axis
   refreshState();
 }
 
