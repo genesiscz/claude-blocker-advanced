@@ -1,8 +1,36 @@
 import path from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { homedir } from "os";
 import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
 
 type StateChangeCallback = (message: ServerMessage) => void;
+
+// Persistence configuration
+const DATA_DIR = path.join(homedir(), ".claude-blocker");
+const DATA_FILE = path.join(DATA_DIR, "sessions.json");
+const HISTORY_MAX_DAYS = 7;
+
+interface PersistedData {
+  version: number;
+  history: HistoricalSession[];
+  lastSaved: string;
+}
+
+interface HistoricalSession {
+  id: string;
+  projectName: string;
+  cwd?: string;
+  startTime: string;
+  endTime: string;
+  lastTool?: string;
+  toolCount: number;
+  totalDurationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+}
 
 // Derive project name from cwd or use truncated session ID
 function getProjectName(cwd?: string, sessionId?: string): string {
@@ -13,6 +41,36 @@ function getProjectName(cwd?: string, sessionId?: string): string {
     return sessionId.substring(0, 8);
   }
   return "Unknown";
+}
+
+// Load persisted data from disk
+function loadPersistedData(): PersistedData {
+  try {
+    if (existsSync(DATA_FILE)) {
+      const raw = readFileSync(DATA_FILE, "utf-8");
+      const data = JSON.parse(raw) as PersistedData;
+      // Clean up old history entries
+      const cutoff = Date.now() - HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+      data.history = data.history.filter((h) => new Date(h.endTime).getTime() > cutoff);
+      return data;
+    }
+  } catch (err) {
+    console.error("Failed to load persisted data:", err);
+  }
+  return { version: 1, history: [], lastSaved: new Date().toISOString() };
+}
+
+// Save data to disk
+function savePersistedData(data: PersistedData): void {
+  try {
+    if (!existsSync(DATA_DIR)) {
+      mkdirSync(DATA_DIR, { recursive: true });
+    }
+    data.lastSaved = new Date().toISOString();
+    writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error("Failed to save persisted data:", err);
+  }
 }
 
 // Convert internal tool call to shared ToolCall format
@@ -59,12 +117,64 @@ class SessionState {
   private sessions: Map<string, InternalSession> = new Map();
   private listeners: Set<StateChangeCallback> = new Set();
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private persistedData: PersistedData;
+  private saveDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor() {
+    // Load persisted data on startup
+    this.persistedData = loadPersistedData();
+    console.log(`Loaded ${this.persistedData.history.length} historical sessions`);
+
     // Start cleanup interval for stale sessions
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleSessions();
     }, 30_000); // Check every 30 seconds
+  }
+
+  // Debounced save to avoid too frequent disk writes
+  private scheduleSave(): void {
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+    this.saveDebounceTimer = setTimeout(() => {
+      savePersistedData(this.persistedData);
+    }, 5000); // Save after 5 seconds of inactivity
+  }
+
+  // Add a session to history when it ends
+  private addToHistory(session: InternalSession): void {
+    const now = new Date();
+    const historicalSession: HistoricalSession = {
+      id: session.id,
+      projectName: session.projectName,
+      cwd: session.cwd,
+      startTime: session.startTime.toISOString(),
+      endTime: now.toISOString(),
+      lastTool: session.lastTool,
+      toolCount: session.toolCount,
+      totalDurationMs: now.getTime() - session.startTime.getTime(),
+      inputTokens: session.inputTokens,
+      outputTokens: session.outputTokens,
+      totalTokens: session.totalTokens,
+      costUsd: session.costUsd,
+    };
+
+    // Add to beginning of history
+    this.persistedData.history.unshift(historicalSession);
+
+    // Keep only last 7 days
+    const cutoff = Date.now() - HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+    this.persistedData.history = this.persistedData.history.filter(
+      (h) => new Date(h.endTime).getTime() > cutoff
+    );
+
+    this.scheduleSave();
+    console.log(`Session added to history: ${session.projectName}`);
+  }
+
+  // Get session history
+  getHistory(): HistoricalSession[] {
+    return this.persistedData.history;
   }
 
   subscribe(callback: StateChangeCallback): () => void {
@@ -121,13 +231,15 @@ class SessionState {
         break;
       }
 
-      case "SessionEnd":
+      case "SessionEnd": {
         const endingSession = this.sessions.get(session_id);
         if (endingSession) {
+          this.addToHistory(endingSession);
           console.log(`Session ended: ${endingSession.projectName}`);
         }
         this.sessions.delete(session_id);
         break;
+      }
 
       case "UserPromptSubmit": {
         this.ensureSession(session_id, payload.cwd);
@@ -254,6 +366,8 @@ class SessionState {
 
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+        // Add to history before removing
+        this.addToHistory(session);
         console.log(`Session timed out: ${session.projectName}`);
         this.sessions.delete(id);
         removed++;
@@ -276,6 +390,12 @@ class SessionState {
   }
 
   destroy(): void {
+    // Save any pending changes immediately
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+    savePersistedData(this.persistedData);
+
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }

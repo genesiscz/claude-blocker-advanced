@@ -40,6 +40,12 @@ export function startServer(port: number = DEFAULT_PORT): void {
       return;
     }
 
+    // Session history endpoint
+    if (req.method === "GET" && url.pathname === "/history") {
+      sendJson(res, { history: state.getHistory() });
+      return;
+    }
+
     // Hook endpoint - receives notifications from Claude Code
     if (req.method === "POST" && url.pathname === "/hook") {
       try {
