@@ -310,9 +310,9 @@ function createOverlay(): void {
     <style>
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
       .overlay { all: initial; position: fixed; ${getPositionStyles()} z-index: 2147483645; font-family: Arial, Helvetica, sans-serif; opacity: ${overlayConfig.opacity}; }
-      .pill { background: #1a1a1a; border: 1px solid #333; border-radius: 20px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+      .pill { background: #1a1a1a; border: 1px solid #333; border-radius: 20px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.3); position: relative; }
       .pill:hover { background: #222; border-color: #444; }
-      .pill:hover .sessions-list { display: block; }
+      .pill:hover .sessions-list, .sessions-list:hover { display: block; }
       .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
       .status-dot.working { background: #30d158; box-shadow: 0 0 6px #30d158; }
       .status-dot.waiting { background: #ffd60a; box-shadow: 0 0 6px #ffd60a; animation: pulse 1.5s ease-in-out infinite; }
@@ -320,7 +320,9 @@ function createOverlay(): void {
       .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
       .label { color: #999; font-size: 12px; font-weight: 500; }
       .sessions-list { display: none; position: absolute; ${getSessionsListPositionStyles()} background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 300px; max-width: 380px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-      .session-item { padding: 12px; border-bottom: 1px solid #2a2a2a; }
+      .sessions-list::before { content: ''; position: absolute; left: 0; right: 0; height: 8px; ${overlayConfig.position.includes("bottom") ? "bottom: 100%;" : "top: -8px;"} }
+      .session-item { padding: 12px; border-bottom: 1px solid #2a2a2a; position: relative; }
+      .session-item:hover { background: #1f1f1f; }
       .session-item:last-child { border-bottom: none; }
       .session-header { display: flex; align-items: center; gap: 8px; }
       .session-name { flex: 1; color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -338,6 +340,11 @@ function createOverlay(): void {
       .tool-time { font-size: 10px; color: #444; min-width: 30px; text-align: right; }
       .tool-row.latest .tool-time { color: #555; }
       .no-sessions { padding: 16px; text-align: center; color: #666; font-size: 12px; }
+      .session-actions { display: flex; gap: 4px; margin-top: 8px; margin-left: 16px; }
+      .action-btn { all: initial; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #2a2a2a; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+      .action-btn:hover { background: #333; transform: translateY(-1px); }
+      .action-btn svg { width: 12px; height: 12px; stroke: #888; stroke-width: 2; fill: none; }
+      .action-btn:hover svg { stroke: #fff; }
     </style>
     <div class="overlay">
       <div class="pill">
@@ -438,6 +445,26 @@ function updateOverlay(state: PublicState): void {
           toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
         }
 
+        // Action buttons
+        const actionsHtml = `
+          <div class="session-actions">
+            <button class="action-btn" data-action="copy-id" data-session-id="${s.id}" title="Copy session ID">
+              <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            ${s.cwd ? `
+            <button class="action-btn" data-action="open-folder" data-cwd="${s.cwd}" title="Open in Finder">
+              <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            <button class="action-btn" data-action="open-terminal" data-cwd="${s.cwd}" data-session-id="${s.id}" title="Resume in Terminal">
+              <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </button>
+            ` : ""}
+            <button class="action-btn" data-action="copy-command" data-session-id="${s.id}" title="Copy resume command">
+              <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </button>
+          </div>
+        `;
+
         return `
           <div class="session-item">
             <div class="session-header">
@@ -447,10 +474,66 @@ function updateOverlay(state: PublicState): void {
             </div>
             ${cwdHtml}
             ${toolsHtml}
+            ${actionsHtml}
           </div>
         `;
       })
       .join("");
+
+    // Add event listeners for action buttons
+    sessionsList.querySelectorAll(".action-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const target = e.currentTarget as HTMLElement;
+        const action = target.dataset.action;
+        const sessionId = target.dataset.sessionId;
+        const cwd = target.dataset.cwd;
+
+        switch (action) {
+          case "copy-id":
+            if (sessionId) {
+              await navigator.clipboard.writeText(sessionId);
+            }
+            break;
+          case "open-folder":
+            if (cwd) {
+              try {
+                await fetch("http://localhost:8765/action/open-finder", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ path: cwd }),
+                });
+              } catch (err) {
+                console.error("Failed to open folder:", err);
+              }
+            }
+            break;
+          case "open-terminal":
+            if (cwd && sessionId) {
+              try {
+                await fetch("http://localhost:8765/action/open-terminal", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    path: cwd,
+                    command: `claude --resume ${sessionId}`,
+                    app: "warp", // Default to warp, could be made configurable
+                  }),
+                });
+              } catch (err) {
+                // Fallback to copying command
+                await navigator.clipboard.writeText(`cd "${cwd}" && claude --resume ${sessionId}`);
+              }
+            }
+            break;
+          case "copy-command":
+            if (sessionId) {
+              await navigator.clipboard.writeText(`claude --resume ${sessionId}`);
+            }
+            break;
+        }
+      });
+    });
   }
 }
 
