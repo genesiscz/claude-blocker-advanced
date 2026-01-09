@@ -2,11 +2,24 @@ export {};
 
 const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
 
+interface Session {
+  id: string;
+  status: "idle" | "working" | "waiting_for_input";
+  projectName: string;
+  startTime: string;
+  lastActivity: string;
+  lastTool?: string;
+  toolCount: number;
+  waitingForInputSince?: string;
+}
+
 interface ExtensionState {
   blocked: boolean;
   serverConnected: boolean;
+  sessions: Session[];
   sessionCount: number;
   working: number;
+  waitingForInput: number;
   bypassActive: boolean;
 }
 
@@ -16,13 +29,28 @@ interface BypassStatus {
   bypassUntil: number | null;
 }
 
+interface OverlayConfig {
+  enabled: boolean;
+  scope: "all" | "blocked" | "none";
+  style: "pill" | "sidebar" | "dot";
+  position: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  opacity: number;
+}
+
+const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
+  enabled: true,
+  scope: "all",
+  style: "pill",
+  position: "top-right",
+  opacity: 0.9,
+};
+
 // Elements
 const statusIndicator = document.getElementById("status-indicator") as HTMLElement;
 const statusText = document.getElementById("status-text") as HTMLElement;
 const sessionsEl = document.getElementById("sessions") as HTMLElement;
 const workingEl = document.getElementById("working") as HTMLElement;
 const blockStatusEl = document.getElementById("block-status") as HTMLElement;
-const blockingCard = document.getElementById("blocking-card") as HTMLElement;
 const addForm = document.getElementById("add-form") as HTMLFormElement;
 const domainInput = document.getElementById("domain-input") as HTMLInputElement;
 const domainList = document.getElementById("domain-list") as HTMLUListElement;
@@ -31,8 +59,31 @@ const bypassBtn = document.getElementById("bypass-btn") as HTMLButtonElement;
 const bypassText = document.getElementById("bypass-text") as HTMLElement;
 const bypassStatus = document.getElementById("bypass-status") as HTMLElement;
 
+// Sessions panel elements
+const sessionsList = document.getElementById("sessions-list") as HTMLElement;
+
+// Overlay settings elements
+const overlayEnabled = document.getElementById("overlay-enabled") as HTMLInputElement;
+const overlayScope = document.getElementById("overlay-scope") as HTMLSelectElement;
+const overlayPosition = document.getElementById("overlay-position") as HTMLSelectElement;
+const overlayOpacity = document.getElementById("overlay-opacity") as HTMLInputElement;
+const opacityValue = document.getElementById("opacity-value") as HTMLElement;
+const overlayPreview = document.getElementById("overlay-preview") as HTMLElement;
+
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
+let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
+let lastSessions: Session[] = [];
+
+// Format duration
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
 
 // Load domains from storage
 async function loadDomains(): Promise<string[]> {
@@ -48,11 +99,40 @@ async function loadDomains(): Promise<string[]> {
   });
 }
 
+// Load overlay config from storage
+async function loadOverlayConfig(): Promise<OverlayConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["overlayConfig"], (result) => {
+      if (result.overlayConfig) {
+        resolve({ ...DEFAULT_OVERLAY_CONFIG, ...result.overlayConfig });
+      } else {
+        resolve(DEFAULT_OVERLAY_CONFIG);
+      }
+    });
+  });
+}
+
+// Save overlay config to storage
+async function saveOverlayConfig(config: OverlayConfig): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ overlayConfig: config }, () => {
+      // Notify all tabs about the change
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { type: "OVERLAY_CONFIG_UPDATED", config }).catch(() => {});
+          }
+        }
+      });
+      resolve();
+    });
+  });
+}
+
 // Save domains to storage
 async function saveDomains(domains: string[]): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.sync.set({ blockedDomains: domains }, () => {
-      // Notify all tabs about the change
       chrome.tabs.query({}, (tabs) => {
         for (const tab of tabs) {
           if (tab.id) {
@@ -117,6 +197,109 @@ function renderDomains(): void {
   }
 }
 
+// Render sessions list
+function renderSessions(sessions: Session[]): void {
+  lastSessions = sessions;
+
+  if (sessions.length === 0) {
+    sessionsList.innerHTML = '<div class="no-sessions">No active sessions</div>';
+    return;
+  }
+
+  const now = Date.now();
+  const sorted = [...sessions].sort((a, b) => {
+    const order = { working: 0, waiting_for_input: 1, idle: 2 };
+    return order[a.status] - order[b.status];
+  });
+
+  sessionsList.innerHTML = sorted.map(session => {
+    const uptime = formatDuration(now - new Date(session.startTime).getTime());
+    const dotClass = session.status === "working" ? "working"
+      : session.status === "waiting_for_input" ? "waiting" : "idle";
+
+    let waitHtml = "";
+    if (session.status === "waiting_for_input" && session.waitingForInputSince) {
+      const waitTime = now - new Date(session.waitingForInputSince).getTime();
+      const waitClass = waitTime > 300000 ? "long" : "";
+      waitHtml = `<span class="waiting-time ${waitClass}">Waiting ${formatDuration(waitTime)}</span>`;
+    }
+
+    const toolHtml = session.lastTool
+      ? `<span class="session-tool">${session.lastTool}</span>` : "";
+
+    return `
+      <div class="session-card">
+        <span class="session-dot ${dotClass}"></span>
+        <div class="session-info">
+          <div class="session-name">${session.projectName}</div>
+          <div class="session-meta">
+            <span>${uptime}</span>
+            ${waitHtml}
+          </div>
+        </div>
+        ${toolHtml}
+        <span class="session-id" title="Click to copy">${session.id.substring(0, 8)}</span>
+      </div>
+    `;
+  }).join("");
+
+  // Add click to copy session ID
+  sessionsList.querySelectorAll(".session-id").forEach((el, i) => {
+    el.addEventListener("click", () => {
+      navigator.clipboard.writeText(sorted[i].id);
+      el.textContent = "Copied!";
+      setTimeout(() => {
+        el.textContent = sorted[i].id.substring(0, 8);
+      }, 1000);
+    });
+  });
+}
+
+// Update overlay settings UI
+function updateOverlaySettingsUI(): void {
+  overlayEnabled.checked = currentOverlayConfig.enabled;
+  overlayScope.value = currentOverlayConfig.scope;
+  overlayPosition.value = currentOverlayConfig.position;
+  overlayOpacity.value = String(currentOverlayConfig.opacity);
+  opacityValue.textContent = `${Math.round(currentOverlayConfig.opacity * 100)}%`;
+  updatePreviewPosition();
+}
+
+// Update preview position based on settings
+function updatePreviewPosition(): void {
+  const preview = overlayPreview.querySelector(".preview-overlay") as HTMLElement;
+  if (!preview) return;
+
+  // Reset all positions
+  preview.style.top = "";
+  preview.style.bottom = "";
+  preview.style.left = "";
+  preview.style.right = "";
+
+  const pos = currentOverlayConfig.position;
+  if (pos.includes("top")) preview.style.top = "16px";
+  if (pos.includes("bottom")) preview.style.bottom = "16px";
+  if (pos.includes("left")) preview.style.left = "16px";
+  if (pos.includes("right")) preview.style.right = "16px";
+
+  preview.style.opacity = String(currentOverlayConfig.opacity);
+}
+
+// Handle overlay settings changes
+async function handleOverlayChange(): Promise<void> {
+  currentOverlayConfig = {
+    enabled: overlayEnabled.checked,
+    scope: overlayScope.value as OverlayConfig["scope"],
+    style: "pill", // Only pill style for now
+    position: overlayPosition.value as OverlayConfig["position"],
+    opacity: parseFloat(overlayOpacity.value),
+  };
+
+  opacityValue.textContent = `${Math.round(currentOverlayConfig.opacity * 100)}%`;
+  updatePreviewPosition();
+  await saveOverlayConfig(currentOverlayConfig);
+}
+
 // Add a domain
 async function addDomain(raw: string): Promise<void> {
   const domain = normalizeDomain(raw);
@@ -176,6 +359,11 @@ function updateUI(state: ExtensionState): void {
   } else {
     blockStatusEl.textContent = "Open";
     blockStatusEl.style.color = "var(--accent-green)";
+  }
+
+  // Sessions list
+  if (state.sessions) {
+    renderSessions(state.sessions);
   }
 }
 
@@ -249,6 +437,12 @@ bypassBtn.addEventListener("click", () => {
   });
 });
 
+// Overlay settings event listeners
+overlayEnabled.addEventListener("change", handleOverlayChange);
+overlayScope.addEventListener("change", handleOverlayChange);
+overlayPosition.addEventListener("change", handleOverlayChange);
+overlayOpacity.addEventListener("input", handleOverlayChange);
+
 // Listen for state broadcasts
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
@@ -259,11 +453,14 @@ chrome.runtime.onMessage.addListener((message) => {
 // Initialize
 async function init(): Promise<void> {
   currentDomains = await loadDomains();
+  currentOverlayConfig = await loadOverlayConfig();
+
   renderDomains();
+  updateOverlaySettingsUI();
   refreshState();
 }
 
 init();
 
 // Refresh periodically
-setInterval(refreshState, 5000);
+setInterval(refreshState, 1000);
