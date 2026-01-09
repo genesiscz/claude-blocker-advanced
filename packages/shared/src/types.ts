@@ -101,3 +101,21 @@ export const KEEPALIVE_INTERVAL_MS = 20 * 1000; // 20 seconds
 
 // Tools that indicate Claude is waiting for user input
 export const USER_INPUT_TOOLS = ["AskUserQuestion", "ask_user", "ask_human"];
+
+// Terminal application options
+export type TerminalApp = "warp" | "iterm2" | "terminal" | "ghostty";
+
+export interface TerminalConfig {
+  app: TerminalApp;
+}
+
+export const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
+  app: "warp",
+};
+
+export const TERMINAL_OPTIONS: { value: TerminalApp; label: string }[] = [
+  { value: "warp", label: "Warp" },
+  { value: "iterm2", label: "iTerm2" },
+  { value: "terminal", label: "Terminal.app" },
+  { value: "ghostty", label: "Ghostty" },
+];

@@ -75,6 +75,12 @@ interface NotificationConfig {
   onDisconnected: boolean;
 }
 
+type TerminalApp = "warp" | "iterm2" | "terminal" | "ghostty";
+
+interface TerminalConfig {
+  app: TerminalApp;
+}
+
 // Timeline activity tracking
 interface ActivitySegment {
   status: "idle" | "working" | "waiting_for_input";
@@ -104,6 +110,10 @@ const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
   onWaiting: true,
   onFinished: true,
   onDisconnected: true,
+};
+
+const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
+  app: "warp",
 };
 
 // Timeline constants
@@ -152,6 +162,9 @@ const notifyWaiting = document.getElementById("notify-waiting") as HTMLInputElem
 const notifyFinished = document.getElementById("notify-finished") as HTMLInputElement;
 const notifyDisconnected = document.getElementById("notify-disconnected") as HTMLInputElement;
 
+// Terminal settings element
+const terminalApp = document.getElementById("terminal-app") as HTMLSelectElement;
+
 // Tab elements
 const tabButtons = document.querySelectorAll(".tab-btn") as NodeListOf<HTMLButtonElement>;
 const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTMLElement>;
@@ -160,6 +173,7 @@ let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
+let currentTerminalConfig: TerminalConfig = DEFAULT_TERMINAL_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
 let currentHistoryFilter: HistoryFilter = "all";
@@ -390,6 +404,26 @@ async function saveOverlayConfig(config: OverlayConfig): Promise<void> {
 async function saveNotificationConfig(config: NotificationConfig): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.sync.set({ notificationConfig: config }, resolve);
+  });
+}
+
+// Load terminal config from storage
+async function loadTerminalConfig(): Promise<TerminalConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["terminalConfig"], (result) => {
+      if (result.terminalConfig) {
+        resolve({ ...DEFAULT_TERMINAL_CONFIG, ...result.terminalConfig });
+      } else {
+        resolve(DEFAULT_TERMINAL_CONFIG);
+      }
+    });
+  });
+}
+
+// Save terminal config to storage
+async function saveTerminalConfig(config: TerminalConfig): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ terminalConfig: config }, resolve);
   });
 }
 
@@ -1019,6 +1053,19 @@ async function handleNotificationChange(): Promise<void> {
   await saveNotificationConfig(currentNotificationConfig);
 }
 
+// Update terminal settings UI
+function updateTerminalSettingsUI(): void {
+  terminalApp.value = currentTerminalConfig.app;
+}
+
+// Handle terminal settings changes
+async function handleTerminalChange(): Promise<void> {
+  currentTerminalConfig = {
+    app: terminalApp.value as TerminalApp,
+  };
+  await saveTerminalConfig(currentTerminalConfig);
+}
+
 // Add a domain
 async function addDomain(raw: string): Promise<void> {
   const domain = normalizeDomain(raw);
@@ -1224,6 +1271,9 @@ notifyWaiting.addEventListener("change", handleNotificationChange);
 notifyFinished.addEventListener("change", handleNotificationChange);
 notifyDisconnected.addEventListener("change", handleNotificationChange);
 
+// Terminal settings event listener
+terminalApp.addEventListener("change", handleTerminalChange);
+
 // Listen for state broadcasts
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
@@ -1236,11 +1286,13 @@ async function init(): Promise<void> {
   currentDomains = await loadDomains();
   currentOverlayConfig = await loadOverlayConfig();
   currentNotificationConfig = await loadNotificationConfig();
+  currentTerminalConfig = await loadTerminalConfig();
   sessionHistory = await loadSessionHistory();
 
   renderDomains();
   updateOverlaySettingsUI();
   updateNotificationSettingsUI();
+  updateTerminalSettingsUI();
   renderTimelineAxis(); // Initialize timeline axis
   renderHistory(); // Initialize history list
   refreshState();
