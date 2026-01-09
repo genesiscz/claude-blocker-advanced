@@ -1,3 +1,5 @@
+import { executeSessionAction } from "../../shared/src/actions.js";
+
 export {};
 
 const MODAL_ID = "claude-blocker-modal";
@@ -486,51 +488,13 @@ function updateOverlay(state: PublicState): void {
         e.stopPropagation();
         const target = e.currentTarget as HTMLElement;
         const action = target.dataset.action;
-        const sessionId = target.dataset.sessionId;
-        const cwd = target.dataset.cwd;
 
-        switch (action) {
-          case "copy-id":
-            if (sessionId) {
-              await navigator.clipboard.writeText(sessionId);
-            }
-            break;
-          case "open-folder":
-            if (cwd) {
-              try {
-                await fetch("http://localhost:8765/action/open-finder", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ path: cwd }),
-                });
-              } catch (err) {
-                console.error("Failed to open folder:", err);
-              }
-            }
-            break;
-          case "open-terminal":
-            if (cwd && sessionId) {
-              try {
-                await fetch("http://localhost:8765/action/open-terminal", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    path: cwd,
-                    command: `claude --resume ${sessionId}`,
-                    app: "warp", // Default to warp, could be made configurable
-                  }),
-                });
-              } catch (err) {
-                // Fallback to copying command
-                await navigator.clipboard.writeText(`cd "${cwd}" && claude --resume ${sessionId}`);
-              }
-            }
-            break;
-          case "copy-command":
-            if (sessionId) {
-              await navigator.clipboard.writeText(`claude --resume ${sessionId}`);
-            }
-            break;
+        if (action) {
+          await executeSessionAction(action, {
+            sessionId: target.dataset.sessionId,
+            cwd: target.dataset.cwd,
+            terminalApp: "warp", // Could be made configurable
+          });
         }
       });
     });

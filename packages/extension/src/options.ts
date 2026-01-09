@@ -1,3 +1,5 @@
+import { executeSessionAction } from "../../shared/src/actions.js";
+
 export {};
 
 const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
@@ -584,40 +586,7 @@ function filterHistory(history: HistoricalSession[]): HistoricalSession[] {
   });
 }
 
-// Open project folder in Finder via server
-async function openProjectFolder(cwd: string): Promise<void> {
-  try {
-    const response = await fetch("http://localhost:8765/action/open-finder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: cwd }),
-    });
-    if (!response.ok) throw new Error("Failed to open folder");
-  } catch {
-    // Fallback: copy path to clipboard
-    await navigator.clipboard.writeText(cwd);
-  }
-}
-
-// Open project in terminal and run resume command
-async function openInTerminal(cwd: string, sessionId: string): Promise<void> {
-  const command = `claude --resume ${sessionId}`;
-  try {
-    const response = await fetch("http://localhost:8765/action/open-terminal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: cwd,
-        command,
-        app: currentTerminalConfig.app,
-      }),
-    });
-    if (!response.ok) throw new Error("Failed to open terminal");
-  } catch {
-    // Fallback: copy command to clipboard
-    await navigator.clipboard.writeText(command);
-  }
-}
+// Legacy wrappers for backward compatibility - these now use shared actions
 
 // Update session activity tracking
 function updateSessionActivity(session: Session): void {
@@ -989,7 +958,7 @@ function renderSessions(sessions: Session[]): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = sorted[index];
-      await navigator.clipboard.writeText(session.id);
+      await executeSessionAction("copy-id", { sessionId: session.id });
       showToast(`Copied session ID: <strong>${session.id.substring(0, 8)}...</strong>`);
     });
   });
@@ -1001,10 +970,10 @@ function renderSessions(sessions: Session[]): void {
       e.stopPropagation();
       const session = sorted[index];
       if (session.cwd) {
-        try {
-          await openProjectFolder(session.cwd);
+        const result = await executeSessionAction("open-folder", { cwd: session.cwd });
+        if (result.success) {
           showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
-        } catch {
+        } else {
           showToast(`Copied path to clipboard`, "info");
         }
       }
@@ -1018,10 +987,14 @@ function renderSessions(sessions: Session[]): void {
       e.stopPropagation();
       const session = sorted[index];
       if (session.cwd) {
-        try {
-          await openInTerminal(session.cwd, session.id);
+        const result = await executeSessionAction("open-terminal", {
+          cwd: session.cwd,
+          sessionId: session.id,
+          terminalApp: currentTerminalConfig.app,
+        });
+        if (result.success && !result.fallback) {
           showToast(`Opened <strong>${session.projectName}</strong> in ${currentTerminalConfig.app}`);
-        } catch {
+        } else {
           showToast(`Copied resume command to clipboard`, "info");
         }
       }
@@ -1034,8 +1007,7 @@ function renderSessions(sessions: Session[]): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = sorted[index];
-      const command = `claude --resume ${session.id}`;
-      await navigator.clipboard.writeText(command);
+      await executeSessionAction("copy-command", { sessionId: session.id });
       showToast(`Copied: <strong>claude --resume ${session.id.substring(0, 8)}...</strong>`);
     });
   });
@@ -1135,7 +1107,7 @@ function renderHistory(): void {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = filtered[index];
-      await navigator.clipboard.writeText(session.id);
+      await executeSessionAction("copy-id", { sessionId: session.id });
       showToast(`Copied session ID: <strong>${session.id.substring(0, 8)}...</strong>`);
     });
   });
@@ -1147,10 +1119,10 @@ function renderHistory(): void {
       e.stopPropagation();
       const session = filtered[index];
       if (session.cwd) {
-        try {
-          await openProjectFolder(session.cwd);
+        const result = await executeSessionAction("open-folder", { cwd: session.cwd });
+        if (result.success) {
           showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
-        } catch {
+        } else {
           showToast(`Copied path to clipboard`, "info");
         }
       }
