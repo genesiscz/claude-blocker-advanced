@@ -622,14 +622,69 @@ section {
   border: 1px solid var(--border-subtle);
 }
 
-/* Recent tools list */
+/* Recent tools list - vertical layout */
 .session-tools {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-elevated);
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
 }
 
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-row.latest {
+  color: var(--text-secondary);
+}
+
+.tool-name {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.tool-row.latest .tool-name {
+  color: var(--accent-green);
+}
+
+.tool-detail {
+  flex: 1;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-row.latest .tool-detail {
+  color: var(--text-muted);
+}
+
+.tool-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-feature-settings: "tnum";
+  flex-shrink: 0;
+  min-width: 36px;
+  text-align: right;
+}
+
+.tool-row.latest .tool-time {
+  color: var(--text-muted);
+}
+
+/* Legacy badge style - deprecated */
 .tool-badge {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -648,17 +703,6 @@ section {
   color: var(--text-secondary);
   background: var(--bg-hover);
   border-color: var(--border-default);
-}
-
-.tool-time {
-  font-size: 10px;
-  color: var(--text-dim);
-  font-feature-settings: "tnum";
-  margin-left: 4px;
-}
-
-.tool-badge.latest .tool-time {
-  color: var(--text-muted);
 }
 
 .session-tokens {

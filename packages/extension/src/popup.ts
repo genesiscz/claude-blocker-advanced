@@ -68,24 +68,33 @@ function formatRelativeTime(ms: number): string {
   return `-${seconds}s`;
 }
 
-// Format tool label with truncated input info
-function formatToolLabel(tool: ToolCall): string {
-  const { name, input } = tool;
-  if (!input) return name;
+// Format tool detail info (more verbose for vertical layout)
+function formatToolDetail(tool: ToolCall): string {
+  const { input } = tool;
+  if (!input) return "";
 
   if (input.file_path) {
-    const filename = input.file_path.split("/").pop() ?? input.file_path;
-    return `${name}: ${filename}`;
+    // Show filename with optional path hint
+    const parts = input.file_path.split("/");
+    if (parts.length > 2) {
+      return `…/${parts.slice(-2).join("/")}`;
+    }
+    return input.file_path;
   }
   if (input.command) {
-    const firstWord = input.command.split(" ")[0];
-    return `${name}: ${firstWord}`;
+    // Show first 40 chars of command
+    const truncated = input.command.length > 40 ? input.command.slice(0, 40) + "…" : input.command;
+    return truncated;
   }
   if (input.pattern) {
-    const truncated = input.pattern.length > 12 ? input.pattern.slice(0, 12) + "…" : input.pattern;
-    return `${name}: "${truncated}"`;
+    const truncated = input.pattern.length > 30 ? input.pattern.slice(0, 30) + "…" : input.pattern;
+    return `"${truncated}"`;
   }
-  return name;
+  if (input.description) {
+    const truncated = input.description.length > 40 ? input.description.slice(0, 40) + "…" : input.description;
+    return truncated;
+  }
+  return "";
 }
 
 // Get status dot class
@@ -127,17 +136,22 @@ function renderSession(session: Session): HTMLElement {
     waitInfo = `<span class="session-wait ${waitClass}">⏳ ${formatDuration(waitTime)}</span>`;
   }
 
-  // Render recent tools with relative timestamps
+  // Render recent tools with vertical layout
   let toolsHtml = "";
   if (session.recentTools && session.recentTools.length > 0) {
-    const toolBadges = session.recentTools.map((tool, i) => {
+    const toolRows = session.recentTools.map((tool, i) => {
       const timeSince = now - new Date(tool.timestamp).getTime();
       const timeStr = formatRelativeTime(timeSince);
-      const label = formatToolLabel(tool);
+      const detail = formatToolDetail(tool);
       const latestClass = i === 0 ? "latest" : "";
-      return `<span class="tool-badge ${latestClass}" title="${tool.name}">${label} <span class="tool-time">${timeStr}</span></span>`;
+      const detailHtml = detail ? `<span class="tool-detail" title="${detail}">${detail}</span>` : "";
+      return `<div class="tool-row ${latestClass}">
+        <span class="tool-name">${tool.name}</span>
+        ${detailHtml}
+        <span class="tool-time">${timeStr}</span>
+      </div>`;
     });
-    toolsHtml = `<div class="session-tools">${toolBadges.join("")}</div>`;
+    toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
   }
 
   el.innerHTML = `
