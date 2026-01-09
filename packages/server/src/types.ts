@@ -23,4 +23,9 @@ export interface InternalSession {
   lastTool?: string;
   toolCount: number;
   waitingForInputSince?: Date;
+  // Token tracking
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
 }

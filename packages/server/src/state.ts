@@ -27,6 +27,10 @@ function toSession(internal: InternalSession): Session {
     lastTool: internal.lastTool,
     toolCount: internal.toolCount,
     waitingForInputSince: internal.waitingForInputSince?.toISOString(),
+    inputTokens: internal.inputTokens,
+    outputTokens: internal.outputTokens,
+    totalTokens: internal.totalTokens,
+    costUsd: internal.costUsd,
   };
 }
 
@@ -86,6 +90,10 @@ class SessionState {
           startTime: now,
           lastActivity: now,
           toolCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          costUsd: 0,
         });
         console.log(`Session started: ${getProjectName(payload.cwd, session_id)}`);
         break;
@@ -105,6 +113,7 @@ class SessionState {
         promptSession.status = "working";
         promptSession.waitingForInputSince = undefined;
         promptSession.lastActivity = new Date();
+        this.accumulateTokens(promptSession, payload);
         break;
       }
 
@@ -133,6 +142,16 @@ class SessionState {
           toolSession.status = "working";
         }
         toolSession.lastActivity = new Date();
+        this.accumulateTokens(toolSession, payload);
+        break;
+      }
+
+      case "PostToolUse": {
+        // PostToolUse often contains token usage data
+        this.ensureSession(session_id, payload.cwd);
+        const postToolSession = this.sessions.get(session_id)!;
+        postToolSession.lastActivity = new Date();
+        this.accumulateTokens(postToolSession, payload);
         break;
       }
 
@@ -150,6 +169,8 @@ class SessionState {
           idleSession.status = "idle";
         }
         idleSession.lastActivity = new Date();
+        // Stop event may contain final token counts
+        this.accumulateTokens(idleSession, payload);
         break;
       }
     }
@@ -168,8 +189,31 @@ class SessionState {
         startTime: now,
         lastActivity: now,
         toolCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        costUsd: 0,
       });
       console.log(`Session connected: ${getProjectName(cwd, sessionId)}`);
+    }
+  }
+
+  // Accumulate token counts from hook payload
+  private accumulateTokens(session: InternalSession, payload: HookPayload): void {
+    if (payload.input_tokens) {
+      session.inputTokens += payload.input_tokens;
+    }
+    if (payload.output_tokens) {
+      session.outputTokens += payload.output_tokens;
+    }
+    if (payload.total_tokens) {
+      session.totalTokens += payload.total_tokens;
+    } else if (payload.input_tokens || payload.output_tokens) {
+      // Calculate total if not provided
+      session.totalTokens = session.inputTokens + session.outputTokens;
+    }
+    if (payload.cost_usd) {
+      session.costUsd += payload.cost_usd;
     }
   }
 

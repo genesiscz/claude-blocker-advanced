@@ -4,6 +4,7 @@ export interface HookPayload {
   hook_event_name:
     | "UserPromptSubmit"
     | "PreToolUse"
+    | "PostToolUse"
     | "Stop"
     | "SessionStart"
     | "SessionEnd";
@@ -11,6 +12,12 @@ export interface HookPayload {
   tool_input?: Record<string, unknown>;
   cwd?: string;
   transcript_path?: string;
+  // Token tracking (if provided by Claude Code)
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  // Cost tracking (if provided)
+  cost_usd?: number;
 }
 
 // Session state tracked by server
@@ -24,6 +31,11 @@ export interface Session {
   lastTool?: string;
   toolCount: number;
   waitingForInputSince?: string; // ISO string for JSON serialization
+  // Token tracking
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
 }
 
 // WebSocket messages from server to extension

@@ -12,6 +12,11 @@ interface Session {
   lastTool?: string;
   toolCount: number;
   waitingForInputSince?: string;
+  // Token tracking
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
 }
 
 // Historical session - session that has ended
@@ -159,6 +164,31 @@ function formatDuration(ms: number): string {
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
   if (minutes > 0) return `${minutes}m`;
   return `${seconds}s`;
+}
+
+// Format token count for display
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1)}K`;
+  }
+  return String(tokens);
+}
+
+// Format cost for display
+function formatCost(usd: number): string {
+  if (usd >= 1) {
+    return `$${usd.toFixed(2)}`;
+  }
+  if (usd >= 0.01) {
+    return `${(usd * 100).toFixed(1)}¢`;
+  }
+  if (usd > 0) {
+    return `<1¢`;
+  }
+  return "";
 }
 
 // Format time for timeline axis
@@ -673,6 +703,15 @@ function renderSessions(sessions: Session[]): void {
       </div>
     `;
 
+    // Token display (only show if tokens > 0)
+    const hasTokens = session.totalTokens > 0;
+    const tokenTitle = hasTokens
+      ? `Input: ${formatTokens(session.inputTokens)} | Output: ${formatTokens(session.outputTokens)}${session.costUsd > 0 ? ` | Cost: ${formatCost(session.costUsd)}` : ""}`
+      : "No token data";
+    const tokenHtml = hasTokens
+      ? `<span class="session-tokens" title="${tokenTitle}">${formatTokens(session.totalTokens)} tok</span>`
+      : "";
+
     return `
       <div class="session-card">
         <span class="session-dot ${dotClass}"></span>
@@ -682,6 +721,7 @@ function renderSessions(sessions: Session[]): void {
           <div class="session-meta">
             <span>${uptime}</span>
             ${waitHtml}
+            ${tokenHtml}
           </div>
         </div>
         ${toolHtml}
