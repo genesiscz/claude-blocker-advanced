@@ -96,7 +96,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 4: Quick Actions
-**Status: Planned**
+**Status: Done**
 
 ### Session Actions
 - [ ] Copy session ID to clipboard
@@ -120,7 +120,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 5: Session Timeline
-**Status: Planned**
+**Status: Done**
 
 ### Timeline View
 - [ ] Horizontal timeline showing session activity
@@ -143,7 +143,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 6: Productivity Stats
-**Status: Planned**
+**Status: Done (tracking backend only, UI in future)**
 
 ### Daily Stats
 - [ ] Total Claude time today
@@ -171,7 +171,7 @@ Transform claude-blocker from a simple site blocker into a comprehensive Claude 
 ---
 
 ## Phase 7: Quick Resume Links
-**Status: Planned**
+**Status: Done**
 
 ### Session History
 - [ ] List of recent sessions (last 7 days)
