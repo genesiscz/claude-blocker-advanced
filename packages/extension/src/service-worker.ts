@@ -1,5 +1,18 @@
 export {};
 
+// Session type matching server output
+interface Session {
+  id: string;
+  status: "idle" | "working" | "waiting_for_input";
+  projectName: string;
+  cwd?: string;
+  startTime: string;
+  lastActivity: string;
+  lastTool?: string;
+  toolCount: number;
+  waitingForInputSince?: string;
+}
+
 const WS_URL = "ws://localhost:8765/ws";
 const KEEPALIVE_INTERVAL = 20_000;
 const RECONNECT_BASE_DELAY = 1_000;
@@ -8,17 +21,13 @@ const RECONNECT_MAX_DELAY = 30_000;
 // The actual state - service worker is single source of truth
 interface State {
   serverConnected: boolean;
-  sessions: number;
-  working: number;
-  waitingForInput: number;
+  sessions: Session[];
   bypassUntil: number | null;
 }
 
 const state: State = {
   serverConnected: false,
-  sessions: 0,
-  working: 0,
-  waitingForInput: 0,
+  sessions: [],
   bypassUntil: null,
 };
 
@@ -37,15 +46,19 @@ chrome.storage.sync.get(["bypassUntil"], (result) => {
 // Compute derived state
 function getPublicState() {
   const bypassActive = state.bypassUntil !== null && state.bypassUntil > Date.now();
+  const working = state.sessions.filter((s) => s.status === "working").length;
+  const waitingForInput = state.sessions.filter((s) => s.status === "waiting_for_input").length;
+
   // Don't block if waiting for input - only block when truly idle
-  const isIdle = state.working === 0 && state.waitingForInput === 0;
+  const isIdle = working === 0 && waitingForInput === 0;
   const shouldBlock = !bypassActive && (isIdle || !state.serverConnected);
 
   return {
     serverConnected: state.serverConnected,
     sessions: state.sessions,
-    working: state.working,
-    waitingForInput: state.waitingForInput,
+    sessionCount: state.sessions.length,
+    working,
+    waitingForInput,
     blocked: shouldBlock,
     bypassActive,
     bypassUntil: state.bypassUntil,
@@ -84,9 +97,8 @@ function connect() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "state") {
-          state.sessions = msg.sessions;
-          state.working = msg.working;
-          state.waitingForInput = msg.waitingForInput ?? 0;
+          // Now receiving full sessions array from server
+          state.sessions = msg.sessions ?? [];
           broadcast();
         }
       } catch {}
