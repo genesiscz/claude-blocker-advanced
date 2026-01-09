@@ -169,6 +169,9 @@ const terminalApp = document.getElementById("terminal-app") as HTMLSelectElement
 const tabButtons = document.querySelectorAll(".tab-btn") as NodeListOf<HTMLButtonElement>;
 const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTMLElement>;
 
+// Toast container
+const toastContainer = document.getElementById("toast-container") as HTMLElement;
+
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
@@ -337,6 +340,38 @@ function truncatePath(path: string, maxLength: number = 50): string {
   if (parts.length <= 3) return path;
   // Show first part and last 2 parts
   return `${parts[0]}/.../${parts.slice(-2).join("/")}`;
+}
+
+// Toast notification system
+type ToastType = "success" | "info" | "error";
+
+function showToast(message: string, type: ToastType = "success", duration: number = 2500): void {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+
+  const iconSvg = type === "success"
+    ? `<svg class="toast-icon success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 6L9 17l-5-5"/>
+      </svg>`
+    : type === "error"
+    ? `<svg class="toast-icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="15" y1="9" x2="9" y2="15"/>
+        <line x1="9" y1="9" x2="15" y2="15"/>
+      </svg>`
+    : `<svg class="toast-icon info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+      </svg>`;
+
+  toast.innerHTML = `${iconSvg}<span class="toast-message">${message}</span>`;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    setTimeout(() => toast.remove(), 200);
+  }, duration);
 }
 
 // Load domains from storage
@@ -549,20 +584,6 @@ function filterHistory(history: HistoricalSession[]): HistoricalSession[] {
   });
 }
 
-// Copy session ID to clipboard with feedback
-function copySessionId(sessionId: string, button: HTMLButtonElement): void {
-  navigator.clipboard.writeText(sessionId).then(() => {
-    // Show "Copied!" feedback
-    const originalTitle = button.title;
-    button.title = "Copied!";
-    button.classList.add("copied");
-    setTimeout(() => {
-      button.title = originalTitle;
-      button.classList.remove("copied");
-    }, 1500);
-  });
-}
-
 // Open project folder in Finder via server
 async function openProjectFolder(cwd: string): Promise<void> {
   try {
@@ -596,17 +617,6 @@ async function openInTerminal(cwd: string, sessionId: string): Promise<void> {
     // Fallback: copy command to clipboard
     await navigator.clipboard.writeText(command);
   }
-}
-
-// Show temporary feedback on a button
-function showButtonFeedback(button: HTMLButtonElement, message: string): void {
-  const originalHtml = button.innerHTML;
-  button.innerHTML = `<span style="font-size: 10px">${message}</span>`;
-  button.disabled = true;
-  setTimeout(() => {
-    button.innerHTML = originalHtml;
-    button.disabled = false;
-  }, 1000);
 }
 
 // Update session activity tracking
@@ -763,8 +773,85 @@ function renderTimeline(sessions: Session[]): void {
   }).join("");
 }
 
+// Check if sessions have structurally changed (requires full re-render)
+function sessionsStructureChanged(oldSessions: Session[], newSessions: Session[]): boolean {
+  if (oldSessions.length !== newSessions.length) return true;
+
+  const oldSorted = sortSessions(oldSessions);
+  const newSorted = sortSessions(newSessions);
+
+  for (let i = 0; i < oldSorted.length; i++) {
+    const oldS = oldSorted[i];
+    const newS = newSorted[i];
+    // Check if session identity, status, or tool list changed
+    if (oldS.id !== newS.id) return true;
+    if (oldS.status !== newS.status) return true;
+    if (oldS.projectName !== newS.projectName) return true;
+    if (oldS.toolCount !== newS.toolCount) return true;
+    // Check recent tools - if count or names changed
+    if (oldS.recentTools.length !== newS.recentTools.length) return true;
+    for (let j = 0; j < oldS.recentTools.length; j++) {
+      if (oldS.recentTools[j].name !== newS.recentTools[j].name) return true;
+      if (oldS.recentTools[j].timestamp !== newS.recentTools[j].timestamp) return true;
+    }
+  }
+  return false;
+}
+
+// Update only time values in existing DOM (avoids re-render and hover flicker)
+function updateSessionTimes(sessions: Session[]): void {
+  const now = Date.now();
+  const sorted = sortSessions(sessions);
+
+  const sessionCards = sessionsList.querySelectorAll(".session-card");
+  sessionCards.forEach((card, index) => {
+    const session = sorted[index];
+    if (!session) return;
+
+    // Update uptime in session-meta
+    const metaSpan = card.querySelector(".session-meta > span:first-child");
+    if (metaSpan) {
+      const uptime = formatDuration(now - new Date(session.startTime).getTime());
+      metaSpan.textContent = uptime;
+    }
+
+    // Update waiting time
+    const waitingTime = card.querySelector(".waiting-time");
+    if (waitingTime && session.status === "waiting_for_input" && session.waitingForInputSince) {
+      const waitTime = now - new Date(session.waitingForInputSince).getTime();
+      waitingTime.textContent = `Waiting ${formatDuration(waitTime)}`;
+      if (waitTime > 300000) {
+        waitingTime.classList.add("long");
+      } else {
+        waitingTime.classList.remove("long");
+      }
+    }
+
+    // Update tool times
+    const toolRows = card.querySelectorAll(".tool-row");
+    toolRows.forEach((row, toolIndex) => {
+      const tool = session.recentTools[toolIndex];
+      if (!tool) return;
+      const timeEl = row.querySelector(".tool-time");
+      if (timeEl) {
+        const timeSince = now - new Date(tool.timestamp).getTime();
+        timeEl.textContent = formatToolRelativeTime(timeSince);
+      }
+    });
+  });
+}
+
 // Render sessions list
 function renderSessions(sessions: Session[]): void {
+  // Check if we can do a time-only update (no structural changes)
+  if (!sessionsStructureChanged(lastSessions, sessions)) {
+    lastSessions = sessions;
+    updateSessionTimes(sessions);
+    // Still update timeline for segment extensions
+    renderTimeline(sessions);
+    return;
+  }
+
   lastSessions = sessions;
 
   // Update badge
@@ -805,10 +892,17 @@ function renderSessions(sessions: Session[]): void {
         const detail = formatToolDetail(tool);
         const latestClass = i === 0 ? "latest" : "";
         const detailHtml = detail ? `<span class="tool-detail" title="${detail}">${detail}</span>` : "";
+        // Show description on separate line if available
+        const descHtml = tool.input?.description
+          ? `<div class="tool-desc">${tool.input.description.length > 80 ? tool.input.description.slice(0, 80) + "…" : tool.input.description}</div>`
+          : "";
         return `<div class="tool-row ${latestClass}">
-          <span class="tool-name">${tool.name}</span>
-          ${detailHtml}
-          <span class="tool-time">${timeStr}</span>
+          <div class="tool-row-main">
+            <span class="tool-name">${tool.name}</span>
+            ${detailHtml}
+            <span class="tool-time">${timeStr}</span>
+          </div>
+          ${descHtml}
         </div>`;
       });
       toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
@@ -841,18 +935,18 @@ function renderSessions(sessions: Session[]): void {
 
     const actionsHtml = `
       <div class="session-actions">
-        <button class="session-action-btn copy-id-btn" data-session-index="${index}" title="Copy full session ID">
+        <button class="session-action-btn copy-id-btn" data-session-index="${index}" data-tooltip="Copy session ID">
           ${copyIcon}
         </button>
         ${session.cwd ? `
-        <button class="session-action-btn open-folder-btn" data-session-index="${index}" title="Open in Finder">
+        <button class="session-action-btn open-folder-btn" data-session-index="${index}" data-tooltip="Open in Finder">
           ${folderIcon}
         </button>
-        <button class="session-action-btn open-terminal-btn" data-session-index="${index}" title="Resume in Terminal">
+        <button class="session-action-btn open-terminal-btn" data-session-index="${index}" data-tooltip="Resume in Terminal">
           ${terminalIcon}
         </button>
         ` : ""}
-        <button class="session-action-btn copy-command-btn" data-session-index="${index}" title="Copy resume command">
+        <button class="session-action-btn copy-command-btn" data-session-index="${index}" data-tooltip="Copy resume command">
           ${commandIcon}
         </button>
       </div>
@@ -892,20 +986,27 @@ function renderSessions(sessions: Session[]): void {
   sessionsList.querySelectorAll(".copy-id-btn").forEach((btn) => {
     const button = btn as HTMLButtonElement;
     const index = parseInt(button.dataset.sessionIndex || "0", 10);
-    button.addEventListener("click", (e) => {
+    button.addEventListener("click", async (e) => {
       e.stopPropagation();
-      copySessionId(sorted[index].id, button);
+      const session = sorted[index];
+      await navigator.clipboard.writeText(session.id);
+      showToast(`Copied session ID: <strong>${session.id.substring(0, 8)}...</strong>`);
     });
   });
 
   sessionsList.querySelectorAll(".open-folder-btn").forEach((btn) => {
     const button = btn as HTMLButtonElement;
     const index = parseInt(button.dataset.sessionIndex || "0", 10);
-    button.addEventListener("click", (e) => {
+    button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = sorted[index];
       if (session.cwd) {
-        openProjectFolder(session.cwd);
+        try {
+          await openProjectFolder(session.cwd);
+          showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
+        } catch {
+          showToast(`Copied path to clipboard`, "info");
+        }
       }
     });
   });
@@ -917,7 +1018,12 @@ function renderSessions(sessions: Session[]): void {
       e.stopPropagation();
       const session = sorted[index];
       if (session.cwd) {
-        await openInTerminal(session.cwd, session.id);
+        try {
+          await openInTerminal(session.cwd, session.id);
+          showToast(`Opened <strong>${session.projectName}</strong> in ${currentTerminalConfig.app}`);
+        } catch {
+          showToast(`Copied resume command to clipboard`, "info");
+        }
       }
     });
   });
@@ -930,7 +1036,7 @@ function renderSessions(sessions: Session[]): void {
       const session = sorted[index];
       const command = `claude --resume ${session.id}`;
       await navigator.clipboard.writeText(command);
-      showButtonFeedback(button, "Copied!");
+      showToast(`Copied: <strong>claude --resume ${session.id.substring(0, 8)}...</strong>`);
     });
   });
 
@@ -991,11 +1097,11 @@ function renderHistory(): void {
 
     const actionsHtml = `
       <div class="history-actions">
-        <button class="history-action-btn copy-history-id-btn" data-history-index="${index}" title="Copy full session ID">
+        <button class="history-action-btn copy-history-id-btn" data-history-index="${index}" data-tooltip="Copy session ID">
           ${copyIcon}
         </button>
         ${session.cwd ? `
-        <button class="history-action-btn open-history-folder-btn" data-history-index="${index}" title="Open in Finder">
+        <button class="history-action-btn open-history-folder-btn" data-history-index="${index}" data-tooltip="Open in Finder">
           ${folderIcon}
         </button>
         ` : ""}
@@ -1026,20 +1132,27 @@ function renderHistory(): void {
   historyList.querySelectorAll(".copy-history-id-btn").forEach((btn) => {
     const button = btn as HTMLButtonElement;
     const index = parseInt(button.dataset.historyIndex || "0", 10);
-    button.addEventListener("click", (e) => {
+    button.addEventListener("click", async (e) => {
       e.stopPropagation();
-      copySessionId(filtered[index].id, button);
+      const session = filtered[index];
+      await navigator.clipboard.writeText(session.id);
+      showToast(`Copied session ID: <strong>${session.id.substring(0, 8)}...</strong>`);
     });
   });
 
   historyList.querySelectorAll(".open-history-folder-btn").forEach((btn) => {
     const button = btn as HTMLButtonElement;
     const index = parseInt(button.dataset.historyIndex || "0", 10);
-    button.addEventListener("click", (e) => {
+    button.addEventListener("click", async (e) => {
       e.stopPropagation();
       const session = filtered[index];
       if (session.cwd) {
-        openProjectFolder(session.cwd);
+        try {
+          await openProjectFolder(session.cwd);
+          showToast(`Opened <strong>${session.projectName}</strong> in Finder`);
+        } catch {
+          showToast(`Copied path to clipboard`, "info");
+        }
       }
     });
   });

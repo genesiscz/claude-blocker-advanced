@@ -178,13 +178,6 @@
               </div>
             </div>
 
-            <div class="overlay-preview" id="overlay-preview">
-              <div class="preview-label">Preview</div>
-              <div class="preview-overlay">
-                <span class="preview-dot"></span>
-                <span class="preview-text">1 working</span>
-              </div>
-            </div>
           </section>
 
           <!-- Notifications Section -->
@@ -383,6 +376,16 @@
         <p>Made for focus. Block distractions when Claude is idle.</p>
       </footer>
     </div>
+
+    <!-- Live overlay preview (fixed position on screen) -->
+    <div class="live-preview" id="overlay-preview">
+      <span class="preview-dot"></span>
+      <span class="preview-text">1 working</span>
+      <span class="preview-badge">Preview</span>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="options.global.js"></script>
   </body>
