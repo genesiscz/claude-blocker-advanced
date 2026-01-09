@@ -5,7 +5,7 @@ const DEFAULT_DOMAINS = ["x.com", "youtube.com"];
 interface ExtensionState {
   blocked: boolean;
   serverConnected: boolean;
-  sessions: number;
+  sessionCount: number;
   working: number;
   bypassActive: boolean;
 }
@@ -163,7 +163,7 @@ function updateUI(state: ExtensionState): void {
   }
 
   // Stats
-  sessionsEl.textContent = String(state.sessions);
+  sessionsEl.textContent = String(state.sessionCount);
   workingEl.textContent = String(state.working);
 
   // Block status

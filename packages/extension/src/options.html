@@ -52,6 +52,70 @@
           </div>
         </section>
 
+        <!-- Active Sessions Section -->
+        <section class="sessions-section">
+          <div class="section-header">
+            <div class="section-title">
+              <h2>Active Sessions</h2>
+              <p class="section-desc">Claude Code instances currently running</p>
+            </div>
+          </div>
+          <div class="sessions-list" id="sessions-list">
+            <div class="no-sessions">No active sessions</div>
+          </div>
+        </section>
+
+        <!-- Overlay Settings Section -->
+        <section class="overlay-section">
+          <div class="section-header">
+            <div class="section-title">
+              <h2>Status Overlay</h2>
+              <p class="section-desc">Show session status on all pages</p>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="toggle-row">
+              <span class="toggle-label">Enable overlay</span>
+              <input type="checkbox" id="overlay-enabled" checked />
+              <span class="toggle-switch"></span>
+            </label>
+
+            <div class="setting-row">
+              <label for="overlay-scope">Show on</label>
+              <select id="overlay-scope">
+                <option value="all">All pages</option>
+                <option value="blocked">Blocked sites only</option>
+                <option value="none">Disabled</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <label for="overlay-position">Position</label>
+              <select id="overlay-position">
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <label for="overlay-opacity">Opacity</label>
+              <input type="range" id="overlay-opacity" min="0.3" max="1" step="0.1" value="0.9" />
+              <span class="opacity-value" id="opacity-value">90%</span>
+            </div>
+          </div>
+
+          <div class="overlay-preview" id="overlay-preview">
+            <div class="preview-label">Preview</div>
+            <div class="preview-overlay">
+              <span class="preview-dot"></span>
+              <span class="preview-text">1 working</span>
+            </div>
+          </div>
+        </section>
+
         <!-- Blocked Sites Section -->
         <section class="sites-section">
           <div class="section-header">
