@@ -34,143 +34,241 @@
         </div>
       </header>
 
+      <!-- Tab Navigation -->
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="sessions">
+          Sessions
+          <span class="tab-badge" id="sessions-badge">0</span>
+        </button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
+        <button class="tab-btn" data-tab="about">About</button>
+      </nav>
+
       <!-- Main Content -->
       <main>
-        <!-- Stats Cards -->
-        <section class="stats-section">
-          <div class="stat-card">
-            <span class="stat-value" id="sessions">0</span>
-            <span class="stat-label">Sessions</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-value" id="working">0</span>
-            <span class="stat-label">Working</span>
-          </div>
-          <div class="stat-card" id="blocking-card">
-            <span class="stat-value" id="block-status">—</span>
-            <span class="stat-label">Status</span>
-          </div>
-        </section>
-
-        <!-- Active Sessions Section -->
-        <section class="sessions-section">
-          <div class="section-header">
-            <div class="section-title">
-              <h2>Active Sessions</h2>
-              <p class="section-desc">Claude Code instances currently running</p>
+        <!-- Sessions Tab -->
+        <div class="tab-content active" id="tab-sessions">
+          <!-- Stats Cards -->
+          <section class="stats-section">
+            <div class="stat-card">
+              <span class="stat-value" id="sessions">0</span>
+              <span class="stat-label">Sessions</span>
             </div>
-          </div>
-          <div class="sessions-list" id="sessions-list">
-            <div class="no-sessions">No active sessions</div>
-          </div>
-        </section>
-
-        <!-- Overlay Settings Section -->
-        <section class="overlay-section">
-          <div class="section-header">
-            <div class="section-title">
-              <h2>Status Overlay</h2>
-              <p class="section-desc">Show session status on all pages</p>
+            <div class="stat-card">
+              <span class="stat-value" id="working">0</span>
+              <span class="stat-label">Working</span>
             </div>
-          </div>
+            <div class="stat-card" id="blocking-card">
+              <span class="stat-value" id="block-status">-</span>
+              <span class="stat-label">Status</span>
+            </div>
+          </section>
 
-          <div class="settings-group">
-            <label class="toggle-row">
-              <span class="toggle-label">Enable overlay</span>
-              <input type="checkbox" id="overlay-enabled" checked />
-              <span class="toggle-switch"></span>
-            </label>
+          <!-- Active Sessions Section -->
+          <section class="sessions-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Active Sessions</h2>
+                <p class="section-desc">Claude Code instances currently running</p>
+              </div>
+              <div class="filter-dropdown">
+                <select id="session-sort">
+                  <option value="status">Sort by Status</option>
+                  <option value="project">Sort by Project</option>
+                  <option value="activity">Sort by Activity</option>
+                  <option value="uptime">Sort by Uptime</option>
+                </select>
+              </div>
+            </div>
+            <div class="sessions-list" id="sessions-list">
+              <div class="no-sessions">No active sessions</div>
+            </div>
+          </section>
+        </div>
 
-            <div class="setting-row">
-              <label for="overlay-scope">Show on</label>
-              <select id="overlay-scope">
-                <option value="all">All pages</option>
-                <option value="blocked">Blocked sites only</option>
-                <option value="none">Disabled</option>
-              </select>
+        <!-- Settings Tab -->
+        <div class="tab-content" id="tab-settings">
+          <!-- Overlay Settings Section -->
+          <section class="overlay-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Status Overlay</h2>
+                <p class="section-desc">Show session status on all pages</p>
+              </div>
             </div>
 
-            <div class="setting-row">
-              <label for="overlay-position">Position</label>
-              <select id="overlay-position">
-                <option value="top-right">Top Right</option>
-                <option value="top-left">Top Left</option>
-                <option value="bottom-right">Bottom Right</option>
-                <option value="bottom-left">Bottom Left</option>
-              </select>
+            <div class="settings-group">
+              <label class="toggle-row">
+                <span class="toggle-label">Enable overlay</span>
+                <input type="checkbox" id="overlay-enabled" checked />
+                <span class="toggle-switch"></span>
+              </label>
+
+              <div class="setting-row">
+                <label for="overlay-scope">Show on</label>
+                <select id="overlay-scope">
+                  <option value="all">All pages</option>
+                  <option value="blocked">Blocked sites only</option>
+                  <option value="none">Disabled</option>
+                </select>
+              </div>
+
+              <div class="setting-row">
+                <label for="overlay-position">Position</label>
+                <select id="overlay-position">
+                  <option value="top-right">Top Right</option>
+                  <option value="top-left">Top Left</option>
+                  <option value="bottom-right">Bottom Right</option>
+                  <option value="bottom-left">Bottom Left</option>
+                </select>
+              </div>
+
+              <div class="setting-row">
+                <label for="overlay-opacity">Opacity</label>
+                <input type="range" id="overlay-opacity" min="0.3" max="1" step="0.1" value="0.9" />
+                <span class="opacity-value" id="opacity-value">90%</span>
+              </div>
             </div>
 
-            <div class="setting-row">
-              <label for="overlay-opacity">Opacity</label>
-              <input type="range" id="overlay-opacity" min="0.3" max="1" step="0.1" value="0.9" />
-              <span class="opacity-value" id="opacity-value">90%</span>
+            <div class="overlay-preview" id="overlay-preview">
+              <div class="preview-label">Preview</div>
+              <div class="preview-overlay">
+                <span class="preview-dot"></span>
+                <span class="preview-text">1 working</span>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="overlay-preview" id="overlay-preview">
-            <div class="preview-label">Preview</div>
-            <div class="preview-overlay">
-              <span class="preview-dot"></span>
-              <span class="preview-text">1 working</span>
+          <!-- Blocked Sites Section -->
+          <section class="sites-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Blocked Sites</h2>
+                <p class="section-desc">These sites will be blocked when Claude Code is idle</p>
+              </div>
+              <span class="site-count" id="site-count">0</span>
             </div>
-          </div>
-        </section>
 
-        <!-- Blocked Sites Section -->
-        <section class="sites-section">
-          <div class="section-header">
-            <div class="section-title">
-              <h2>Blocked Sites</h2>
-              <p class="section-desc">These sites will be blocked when Claude Code is idle</p>
-            </div>
-            <span class="site-count" id="site-count">0</span>
-          </div>
+            <!-- Add Domain Form -->
+            <form class="add-form" id="add-form">
+              <div class="input-wrapper">
+                <input
+                  type="text"
+                  id="domain-input"
+                  placeholder="example.com"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <kbd class="input-hint">Enter</kbd>
+              </div>
+              <button type="submit" class="add-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Add Site</span>
+              </button>
+            </form>
 
-          <!-- Add Domain Form -->
-          <form class="add-form" id="add-form">
-            <div class="input-wrapper">
-              <input
-                type="text"
-                id="domain-input"
-                placeholder="example.com"
-                spellcheck="false"
-                autocomplete="off"
-              />
-              <kbd class="input-hint">Enter</kbd>
+            <!-- Domain List -->
+            <ul class="domain-list" id="domain-list">
+              <!-- Populated by JS -->
+            </ul>
+          </section>
+
+          <!-- Bypass Section -->
+          <section class="bypass-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Emergency Bypass</h2>
+                <p class="section-desc">Get 5 minutes of unblocked access (once per day)</p>
+              </div>
             </div>
-            <button type="submit" class="add-btn">
+
+            <button class="bypass-btn" id="bypass-btn" disabled>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12,6 12,12 16,14"/>
               </svg>
-              <span>Add Site</span>
+              <span id="bypass-text">Activate Bypass</span>
             </button>
-          </form>
+            <p class="bypass-status" id="bypass-status">Loading...</p>
+          </section>
+        </div>
 
-          <!-- Domain List -->
-          <ul class="domain-list" id="domain-list">
-            <!-- Populated by JS -->
-          </ul>
-        </section>
-
-        <!-- Bypass Section -->
-        <section class="bypass-section">
-          <div class="section-header">
-            <div class="section-title">
-              <h2>Emergency Bypass</h2>
-              <p class="section-desc">Get 5 minutes of unblocked access (once per day)</p>
+        <!-- About Tab -->
+        <div class="tab-content" id="tab-about">
+          <section class="about-section">
+            <div class="about-header">
+              <div class="about-logo">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="11" width="18" height="11" rx="2" fill="#FFD700" stroke="#B8860B" stroke-width="0.5"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#666" stroke-width="1.5" fill="none"/>
+                </svg>
+              </div>
+              <div class="about-title">
+                <h2>Claude Blocker</h2>
+                <span class="about-version">Version 1.0.0</span>
+              </div>
             </div>
-          </div>
 
-          <button class="bypass-btn" id="bypass-btn" disabled>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12,6 12,12 16,14"/>
-            </svg>
-            <span id="bypass-text">Activate Bypass</span>
-          </button>
-          <p class="bypass-status" id="bypass-status">Loading...</p>
-        </section>
+            <p class="about-desc">
+              A productivity tool that blocks distracting websites when Claude Code is idle,
+              helping you stay focused while waiting for AI-assisted tasks to complete.
+            </p>
+
+            <div class="about-features">
+              <h3>Features</h3>
+              <ul>
+                <li>Real-time session monitoring</li>
+                <li>Automatic site blocking when idle</li>
+                <li>Status overlay on all pages</li>
+                <li>Emergency bypass for urgent access</li>
+              </ul>
+            </div>
+
+            <div class="about-links">
+              <h3>Links</h3>
+              <div class="link-grid">
+                <a href="https://github.com/mpaleo/claude-blocker" target="_blank" class="about-link">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  GitHub Repository
+                </a>
+                <a href="https://github.com/mpaleo/claude-blocker/issues" target="_blank" class="about-link">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4"/>
+                    <path d="M12 8h.01"/>
+                  </svg>
+                  Report Issue
+                </a>
+                <a href="https://github.com/mpaleo/claude-blocker/blob/main/PRIVACY.md" target="_blank" class="about-link">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                  Privacy Policy
+                </a>
+                <a href="https://github.com/mpaleo/claude-blocker/blob/main/LICENSE" target="_blank" class="about-link">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                  MIT License
+                </a>
+              </div>
+            </div>
+
+            <div class="about-credits">
+              <p>Made with focus in mind. Block distractions when Claude is idle.</p>
+            </div>
+          </section>
+        </div>
       </main>
 
       <!-- Footer -->

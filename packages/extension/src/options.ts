@@ -6,6 +6,7 @@ interface Session {
   id: string;
   status: "idle" | "working" | "waiting_for_input";
   projectName: string;
+  cwd?: string;
   startTime: string;
   lastActivity: string;
   lastTool?: string;
@@ -37,6 +38,8 @@ interface OverlayConfig {
   opacity: number;
 }
 
+type SortMode = "status" | "project" | "activity" | "uptime";
+
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   enabled: true,
   scope: "all",
@@ -61,6 +64,8 @@ const bypassStatus = document.getElementById("bypass-status") as HTMLElement;
 
 // Sessions panel elements
 const sessionsList = document.getElementById("sessions-list") as HTMLElement;
+const sessionsBadge = document.getElementById("sessions-badge") as HTMLElement;
+const sessionSort = document.getElementById("session-sort") as HTMLSelectElement;
 
 // Overlay settings elements
 const overlayEnabled = document.getElementById("overlay-enabled") as HTMLInputElement;
@@ -70,10 +75,15 @@ const overlayOpacity = document.getElementById("overlay-opacity") as HTMLInputEl
 const opacityValue = document.getElementById("opacity-value") as HTMLElement;
 const overlayPreview = document.getElementById("overlay-preview") as HTMLElement;
 
+// Tab elements
+const tabButtons = document.querySelectorAll(".tab-btn") as NodeListOf<HTMLButtonElement>;
+const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTMLElement>;
+
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 let lastSessions: Session[] = [];
+let currentSortMode: SortMode = "status";
 
 // Format duration
 function formatDuration(ms: number): string {
@@ -83,6 +93,15 @@ function formatDuration(ms: number): string {
   if (hours > 0) return `${hours}h ${minutes % 60}m`;
   if (minutes > 0) return `${minutes}m`;
   return `${seconds}s`;
+}
+
+// Truncate path for display
+function truncatePath(path: string, maxLength: number = 50): string {
+  if (path.length <= maxLength) return path;
+  const parts = path.split("/");
+  if (parts.length <= 3) return path;
+  // Show first part and last 2 parts
+  return `${parts[0]}/.../${parts.slice(-2).join("/")}`;
 }
 
 // Load domains from storage
@@ -197,9 +216,42 @@ function renderDomains(): void {
   }
 }
 
+// Sort sessions based on current mode
+function sortSessions(sessions: Session[]): Session[] {
+  const sorted = [...sessions];
+  const now = Date.now();
+
+  switch (currentSortMode) {
+    case "status": {
+      const order = { working: 0, waiting_for_input: 1, idle: 2 };
+      return sorted.sort((a, b) => order[a.status] - order[b.status]);
+    }
+    case "project":
+      return sorted.sort((a, b) => a.projectName.localeCompare(b.projectName));
+    case "activity":
+      return sorted.sort((a, b) =>
+        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+      );
+    case "uptime":
+      return sorted.sort((a, b) =>
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+    default:
+      return sorted;
+  }
+}
+
 // Render sessions list
 function renderSessions(sessions: Session[]): void {
   lastSessions = sessions;
+
+  // Update badge
+  sessionsBadge.textContent = String(sessions.length);
+  if (sessions.length > 0) {
+    sessionsBadge.classList.add("has-sessions");
+  } else {
+    sessionsBadge.classList.remove("has-sessions");
+  }
 
   if (sessions.length === 0) {
     sessionsList.innerHTML = '<div class="no-sessions">No active sessions</div>';
@@ -207,10 +259,7 @@ function renderSessions(sessions: Session[]): void {
   }
 
   const now = Date.now();
-  const sorted = [...sessions].sort((a, b) => {
-    const order = { working: 0, waiting_for_input: 1, idle: 2 };
-    return order[a.status] - order[b.status];
-  });
+  const sorted = sortSessions(sessions);
 
   sessionsList.innerHTML = sorted.map(session => {
     const uptime = formatDuration(now - new Date(session.startTime).getTime());
@@ -227,11 +276,17 @@ function renderSessions(sessions: Session[]): void {
     const toolHtml = session.lastTool
       ? `<span class="session-tool">${session.lastTool}</span>` : "";
 
+    // Add cwd display if available
+    const cwdHtml = session.cwd
+      ? `<div class="session-cwd" title="${session.cwd}">${truncatePath(session.cwd)}</div>`
+      : "";
+
     return `
       <div class="session-card">
         <span class="session-dot ${dotClass}"></span>
         <div class="session-info">
           <div class="session-name">${session.projectName}</div>
+          ${cwdHtml}
           <div class="session-meta">
             <span>${uptime}</span>
             ${waitHtml}
@@ -382,7 +437,7 @@ function updateBypassButton(status: BypassStatus): void {
       const remaining = Math.max(0, Math.ceil((status.bypassUntil! - Date.now()) / 1000));
       const minutes = Math.floor(remaining / 60);
       const seconds = remaining % 60;
-      bypassText.textContent = `Bypass Active · ${minutes}:${seconds.toString().padStart(2, "0")}`;
+      bypassText.textContent = `Bypass Active - ${minutes}:${seconds.toString().padStart(2, "0")}`;
 
       if (remaining <= 0) {
         if (bypassCountdown) clearInterval(bypassCountdown);
@@ -421,6 +476,27 @@ function refreshState(): void {
   });
 }
 
+// Tab switching
+function switchTab(tabName: string): void {
+  // Update buttons
+  tabButtons.forEach(btn => {
+    if (btn.dataset.tab === tabName) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  // Update content
+  tabContents.forEach(content => {
+    if (content.id === `tab-${tabName}`) {
+      content.classList.add("active");
+    } else {
+      content.classList.remove("active");
+    }
+  });
+}
+
 // Event listeners
 addForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -435,6 +511,24 @@ bypassBtn.addEventListener("click", () => {
       bypassStatus.textContent = response.reason;
     }
   });
+});
+
+// Tab event listeners
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const tabName = btn.dataset.tab;
+    if (tabName) {
+      switchTab(tabName);
+    }
+  });
+});
+
+// Session sort event listener
+sessionSort.addEventListener("change", () => {
+  currentSortMode = sessionSort.value as SortMode;
+  if (lastSessions.length > 0) {
+    renderSessions(lastSessions);
+  }
 });
 
 // Overlay settings event listeners
