@@ -232,6 +232,90 @@
             </div>
           </section>
 
+          <!-- Sound Settings Section -->
+          <section class="sound-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Sound Alerts</h2>
+                <p class="section-desc">Play audio when notifications are triggered</p>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label class="toggle-row">
+                <span class="toggle-label">Enable sound alerts</span>
+                <input type="checkbox" id="sound-enabled" checked />
+                <span class="toggle-switch"></span>
+              </label>
+
+              <div class="setting-row">
+                <label for="sound-volume">Volume</label>
+                <input type="range" id="sound-volume" min="0" max="100" step="5" value="70" />
+                <span class="volume-value" id="volume-value">70%</span>
+              </div>
+
+              <div class="sound-per-event">
+                <div class="setting-row">
+                  <label for="sound-waiting">Waiting for input</label>
+                  <select id="sound-waiting">
+                    <option value="none">None</option>
+                    <option value="subtle" selected>Subtle chime</option>
+                    <option value="clear">Attention bell</option>
+                    <option value="say">Voice (say)</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <label for="sound-finished">Finished working</label>
+                  <select id="sound-finished">
+                    <option value="none">None</option>
+                    <option value="subtle" selected>Subtle chime</option>
+                    <option value="clear">Attention bell</option>
+                    <option value="say">Voice (say)</option>
+                  </select>
+                </div>
+
+                <div class="setting-row">
+                  <label for="sound-disconnected">Session disconnected</label>
+                  <select id="sound-disconnected">
+                    <option value="none">None</option>
+                    <option value="subtle" selected>Subtle chime</option>
+                    <option value="clear">Attention bell</option>
+                    <option value="say">Voice (say)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="sound-test-row">
+                <button type="button" class="test-sound-btn" id="test-sound-subtle">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                  Subtle
+                </button>
+                <button type="button" class="test-sound-btn" id="test-sound-clear">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                  Clear
+                </button>
+                <button type="button" class="test-sound-btn" id="test-sound-say">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                  Voice
+                </button>
+              </div>
+            </div>
+          </section>
+
           <!-- Terminal Settings Section -->
           <section class="terminal-section">
             <div class="section-header">

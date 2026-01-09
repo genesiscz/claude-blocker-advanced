@@ -79,6 +79,18 @@ interface NotificationConfig {
   onDisconnected: boolean;
 }
 
+type SoundStyle = "none" | "subtle" | "clear" | "say";
+
+interface SoundConfig {
+  enabled: boolean;
+  volume: number;
+  perEvent: {
+    onWaiting: SoundStyle;
+    onFinished: SoundStyle;
+    onDisconnected: SoundStyle;
+  };
+}
+
 type TerminalApp = "warp" | "iterm2" | "terminal" | "ghostty";
 
 interface TerminalConfig {
@@ -114,6 +126,16 @@ const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
   onWaiting: true,
   onFinished: true,
   onDisconnected: true,
+};
+
+const DEFAULT_SOUND_CONFIG: SoundConfig = {
+  enabled: true,
+  volume: 70,
+  perEvent: {
+    onWaiting: "subtle",
+    onFinished: "subtle",
+    onDisconnected: "subtle",
+  },
 };
 
 const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
@@ -169,6 +191,17 @@ const testNotificationBtn = document.getElementById("test-notification-btn") as 
 const notificationStatus = document.getElementById("notification-status") as HTMLSpanElement;
 const notificationDebugInfo = document.getElementById("notification-debug-info") as HTMLPreElement;
 
+// Sound settings elements
+const soundEnabled = document.getElementById("sound-enabled") as HTMLInputElement;
+const soundVolume = document.getElementById("sound-volume") as HTMLInputElement;
+const volumeValue = document.getElementById("volume-value") as HTMLSpanElement;
+const soundWaiting = document.getElementById("sound-waiting") as HTMLSelectElement;
+const soundFinished = document.getElementById("sound-finished") as HTMLSelectElement;
+const soundDisconnected = document.getElementById("sound-disconnected") as HTMLSelectElement;
+const testSoundSubtle = document.getElementById("test-sound-subtle") as HTMLButtonElement;
+const testSoundClear = document.getElementById("test-sound-clear") as HTMLButtonElement;
+const testSoundSay = document.getElementById("test-sound-say") as HTMLButtonElement;
+
 // Terminal settings element
 const terminalApp = document.getElementById("terminal-app") as HTMLSelectElement;
 
@@ -183,6 +216,7 @@ let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
+let currentSoundConfig: SoundConfig = DEFAULT_SOUND_CONFIG;
 let currentTerminalConfig: TerminalConfig = DEFAULT_TERMINAL_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
@@ -456,6 +490,26 @@ async function saveOverlayConfig(config: OverlayConfig): Promise<void> {
 async function saveNotificationConfig(config: NotificationConfig): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.sync.set({ notificationConfig: config }, resolve);
+  });
+}
+
+// Load sound config from storage
+async function loadSoundConfig(): Promise<SoundConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["soundConfig"], (result) => {
+      if (result.soundConfig) {
+        resolve({ ...DEFAULT_SOUND_CONFIG, ...result.soundConfig });
+      } else {
+        resolve(DEFAULT_SOUND_CONFIG);
+      }
+    });
+  });
+}
+
+// Save sound config to storage
+async function saveSoundConfig(config: SoundConfig): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ soundConfig: config }, resolve);
   });
 }
 
@@ -1175,6 +1229,41 @@ function updateNotificationSettingsUI(): void {
   updateSubTogglesState();
 }
 
+// Update sound settings UI
+function updateSoundSettingsUI(): void {
+  soundEnabled.checked = currentSoundConfig.enabled;
+  soundVolume.value = String(currentSoundConfig.volume);
+  volumeValue.textContent = `${currentSoundConfig.volume}%`;
+  soundWaiting.value = currentSoundConfig.perEvent.onWaiting;
+  soundFinished.value = currentSoundConfig.perEvent.onFinished;
+  soundDisconnected.value = currentSoundConfig.perEvent.onDisconnected;
+  updateSoundSettingsState();
+}
+
+// Update sound settings disabled state based on master toggle
+function updateSoundSettingsState(): void {
+  const soundControls = [soundVolume, soundWaiting, soundFinished, soundDisconnected];
+  const enabled = soundEnabled.checked;
+
+  for (const control of soundControls) {
+    control.disabled = !enabled;
+    const row = control.closest(".setting-row");
+    if (row) {
+      if (enabled) {
+        row.classList.remove("disabled");
+      } else {
+        row.classList.add("disabled");
+      }
+    }
+  }
+
+  // Update test buttons
+  const testButtons = [testSoundSubtle, testSoundClear, testSoundSay];
+  for (const btn of testButtons) {
+    btn.disabled = !enabled;
+  }
+}
+
 // Update sub-toggles disabled state based on master toggle
 function updateSubTogglesState(): void {
   const subToggles = [notifyWaiting, notifyFinished, notifyDisconnected];
@@ -1238,6 +1327,45 @@ async function handleNotificationChange(): Promise<void> {
 
   updateSubTogglesState();
   await saveNotificationConfig(currentNotificationConfig);
+}
+
+// Handle sound settings changes
+async function handleSoundChange(): Promise<void> {
+  currentSoundConfig = {
+    enabled: soundEnabled.checked,
+    volume: Number(soundVolume.value),
+    perEvent: {
+      onWaiting: soundWaiting.value as SoundStyle,
+      onFinished: soundFinished.value as SoundStyle,
+      onDisconnected: soundDisconnected.value as SoundStyle,
+    },
+  };
+
+  volumeValue.textContent = `${currentSoundConfig.volume}%`;
+  updateSoundSettingsState();
+  await saveSoundConfig(currentSoundConfig);
+}
+
+// Test sound function
+async function testSound(sound: SoundStyle): Promise<void> {
+  try {
+    const message = sound === "say" ? "This is a test notification" : undefined;
+    await new Promise<void>((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { type: "TEST_SOUND", sound, message },
+        (response) => {
+          if (response?.success) {
+            resolve();
+          } else {
+            reject(new Error(response?.error || "Failed to play sound"));
+          }
+        }
+      );
+    });
+    showToast(`Playing ${sound} sound`, "success");
+  } catch (error) {
+    showToast(`Sound failed: ${String(error)}`, "error");
+  }
 }
 
 // Update terminal settings UI
@@ -1520,6 +1648,18 @@ async function updateNotificationDebugInfo(): Promise<void> {
 // Terminal settings event listener
 terminalApp.addEventListener("change", handleTerminalChange);
 
+// Sound settings event listeners
+soundEnabled.addEventListener("change", handleSoundChange);
+soundVolume.addEventListener("input", handleSoundChange);
+soundWaiting.addEventListener("change", handleSoundChange);
+soundFinished.addEventListener("change", handleSoundChange);
+soundDisconnected.addEventListener("change", handleSoundChange);
+
+// Test sound buttons
+testSoundSubtle.addEventListener("click", () => testSound("subtle"));
+testSoundClear.addEventListener("click", () => testSound("clear"));
+testSoundSay.addEventListener("click", () => testSound("say"));
+
 // Listen for state broadcasts
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
@@ -1532,12 +1672,14 @@ async function init(): Promise<void> {
   currentDomains = await loadDomains();
   currentOverlayConfig = await loadOverlayConfig();
   currentNotificationConfig = await loadNotificationConfig();
+  currentSoundConfig = await loadSoundConfig();
   currentTerminalConfig = await loadTerminalConfig();
   sessionHistory = await loadSessionHistory();
 
   renderDomains();
   updateOverlaySettingsUI();
   updateNotificationSettingsUI();
+  updateSoundSettingsUI();
   updateTerminalSettingsUI();
   updateNotificationDebugInfo(); // Load notification debug info
   renderTimelineAxis(); // Initialize timeline axis

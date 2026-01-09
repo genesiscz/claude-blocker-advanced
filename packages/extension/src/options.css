@@ -1865,3 +1865,56 @@ footer p {
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* Sound Settings */
+.sound-section .volume-value {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 40px;
+  text-align: right;
+}
+
+.sound-per-event {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sound-test-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.test-sound-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.test-sound-btn:hover {
+  background: var(--bg-surface);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.test-sound-btn:active {
+  transform: scale(0.98);
+}
+
+.test-sound-btn.playing {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}

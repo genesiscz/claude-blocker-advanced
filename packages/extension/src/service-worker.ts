@@ -33,6 +33,29 @@ interface NotificationConfig {
   onDisconnected: boolean;
 }
 
+// Sound configuration
+type SoundStyle = "none" | "subtle" | "clear" | "say";
+
+interface SoundConfig {
+  enabled: boolean;
+  volume: number; // 0-100
+  perEvent: {
+    onWaiting: SoundStyle;
+    onFinished: SoundStyle;
+    onDisconnected: SoundStyle;
+  };
+}
+
+const DEFAULT_SOUND_CONFIG: SoundConfig = {
+  enabled: true,
+  volume: 70,
+  perEvent: {
+    onWaiting: "subtle",
+    onFinished: "subtle",
+    onDisconnected: "subtle",
+  },
+};
+
 // Productivity stats interface
 interface DailyStats {
   date: string; // YYYY-MM-DD
@@ -85,6 +108,12 @@ const sessionStateTracking: Map<string, SessionStateTracking> = new Map();
 
 // Notification config
 let notificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
+
+// Sound config
+let soundConfig: SoundConfig = DEFAULT_SOUND_CONFIG;
+
+// Offscreen document state
+let offscreenCreated = false;
 
 let websocket: WebSocket | null = null;
 let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
@@ -291,7 +320,75 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.notificationConfig) {
     notificationConfig = { ...DEFAULT_NOTIFICATION_CONFIG, ...changes.notificationConfig.newValue };
   }
+  if (changes.soundConfig) {
+    soundConfig = { ...DEFAULT_SOUND_CONFIG, ...changes.soundConfig.newValue };
+  }
 });
+
+// Load sound config from storage on startup
+chrome.storage.sync.get(["soundConfig"], (result) => {
+  if (result.soundConfig) {
+    soundConfig = { ...DEFAULT_SOUND_CONFIG, ...result.soundConfig };
+  }
+});
+
+// Create offscreen document for audio playback
+async function ensureOffscreenDocument(): Promise<boolean> {
+  if (offscreenCreated) {
+    return true;
+  }
+
+  // Check if document already exists
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    documentUrls: [chrome.runtime.getURL("offscreen.html")],
+  });
+
+  if (existingContexts.length > 0) {
+    offscreenCreated = true;
+    return true;
+  }
+
+  try {
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+      justification: "Play notification sounds",
+    });
+    offscreenCreated = true;
+    console.log("[Claude Blocker] Offscreen document created for audio");
+    return true;
+  } catch (error) {
+    console.error("[Claude Blocker] Failed to create offscreen document:", error);
+    return false;
+  }
+}
+
+// Play a sound via the offscreen document
+async function playSound(sound: SoundStyle, message?: string): Promise<void> {
+  if (!soundConfig.enabled || sound === "none") {
+    return;
+  }
+
+  // Ensure offscreen document exists
+  const ready = await ensureOffscreenDocument();
+  if (!ready) {
+    console.error("[Claude Blocker] Cannot play sound - offscreen document not ready");
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: "PLAY_SOUND",
+      sound,
+      volume: soundConfig.volume,
+      message,
+    });
+    console.log("[Claude Blocker] Sound played:", sound);
+  } catch (error) {
+    console.error("[Claude Blocker] Failed to play sound:", error);
+  }
+}
 
 // Track notification count for debugging
 let notificationCount = 0;
@@ -318,6 +415,7 @@ function sendNotification(title: string, message: string, notificationId?: strin
     title,
     message,
     priority: 1,
+    silent: soundConfig.enabled, // Silence Chrome's default sound when we play our own
   }, (createdId) => {
     if (chrome.runtime.lastError) {
       console.error("[Claude Blocker] Notification failed:", chrome.runtime.lastError);
@@ -357,11 +455,19 @@ function checkForNotifications(newSessions: Session[]): void {
       session.status === "waiting_for_input" &&
       prev?.status !== "waiting_for_input"
     ) {
+      const message = `${session.projectName} is waiting for your input`;
       sendNotification(
         "Claude has a question",
-        `${session.projectName} is waiting for your input`,
+        message,
         `waiting-${session.id}`
       );
+      // Play sound based on config
+      const soundStyle = soundConfig.perEvent.onWaiting;
+      if (soundStyle === "say") {
+        playSound(soundStyle, message);
+      } else {
+        playSound(soundStyle);
+      }
     }
 
     // Session finished working (was working, now idle)
@@ -370,11 +476,19 @@ function checkForNotifications(newSessions: Session[]): void {
       session.status === "idle" &&
       prev?.status === "working"
     ) {
+      const message = `${session.projectName} has completed its task`;
       sendNotification(
         "Claude finished working",
-        `${session.projectName} has completed its task`,
+        message,
         `finished-${session.id}`
       );
+      // Play sound based on config
+      const soundStyle = soundConfig.perEvent.onFinished;
+      if (soundStyle === "say") {
+        playSound(soundStyle, message);
+      } else {
+        playSound(soundStyle);
+      }
     }
   }
 
@@ -382,11 +496,19 @@ function checkForNotifications(newSessions: Session[]): void {
   if (notificationConfig.onDisconnected) {
     for (const prev of previousSessions) {
       if (!newMap.has(prev.id)) {
+        const message = `${prev.projectName} has ended`;
         sendNotification(
           "Session disconnected",
-          `${prev.projectName} has ended`,
+          message,
           `disconnected-${prev.id}`
         );
+        // Play sound based on config
+        const soundStyle = soundConfig.perEvent.onDisconnected;
+        if (soundStyle === "say") {
+          playSound(soundStyle, message);
+        } else {
+          playSound(soundStyle);
+        }
       }
     }
   }
@@ -615,11 +737,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({
       success: true,
       config: notificationConfig,
+      soundConfig,
       notificationCount,
       serverConnected: state.serverConnected,
       sessionsCount: state.sessions.length,
       sessions: state.sessions.map(s => ({ id: s.id.slice(0, 8), status: s.status, project: s.projectName }))
     });
+    return true;
+  }
+
+  if (message.type === "TEST_SOUND") {
+    console.log("[Claude Blocker] Test sound requested:", message.sound);
+    playSound(message.sound as SoundStyle, message.message)
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: String(error) });
+      });
     return true;
   }
 

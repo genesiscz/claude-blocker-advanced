@@ -83,6 +83,29 @@ export interface OverlayConfig {
   customPosition?: { x: number; y: number };
 }
 
+// Sound configuration
+export type SoundStyle = "none" | "subtle" | "clear" | "say";
+
+export interface SoundConfig {
+  enabled: boolean;
+  volume: number; // 0-100
+  perEvent: {
+    onWaiting: SoundStyle;
+    onFinished: SoundStyle;
+    onDisconnected: SoundStyle;
+  };
+}
+
+export const DEFAULT_SOUND_CONFIG: SoundConfig = {
+  enabled: true,
+  volume: 70,
+  perEvent: {
+    onWaiting: "subtle",
+    onFinished: "subtle",
+    onDisconnected: "subtle",
+  },
+};
+
 // Default blocked domains
 export const DEFAULT_BLOCKED_DOMAINS = ["x.com", "twitter.com"];
 
