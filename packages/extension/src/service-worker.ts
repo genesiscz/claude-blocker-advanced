@@ -293,22 +293,55 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
+// Track notification count for debugging
+let notificationCount = 0;
+
 // Send Chrome notification
 function sendNotification(title: string, message: string, notificationId?: string): void {
-  if (!notificationConfig.enabled) return;
+  console.log("[Claude Blocker] sendNotification called:", {
+    title,
+    message,
+    notificationId,
+    enabled: notificationConfig.enabled,
+    config: notificationConfig
+  });
 
-  chrome.notifications.create(notificationId ?? `claude-blocker-${Date.now()}`, {
+  if (!notificationConfig.enabled) {
+    console.log("[Claude Blocker] Notification skipped - notifications disabled");
+    return;
+  }
+
+  const id = notificationId ?? `claude-blocker-${Date.now()}`;
+  chrome.notifications.create(id, {
     type: "basic",
     iconUrl: "icon-128.png",
     title,
     message,
     priority: 1,
+  }, (createdId) => {
+    if (chrome.runtime.lastError) {
+      console.error("[Claude Blocker] Notification failed:", chrome.runtime.lastError);
+    } else {
+      notificationCount++;
+      console.log("[Claude Blocker] Notification created:", createdId, "Total count:", notificationCount);
+    }
   });
 }
 
 // Check for session state changes and send notifications
 function checkForNotifications(newSessions: Session[]): void {
-  if (!notificationConfig.enabled) return;
+  console.log("[Claude Blocker] checkForNotifications called:", {
+    enabled: notificationConfig.enabled,
+    newSessionsCount: newSessions.length,
+    prevSessionsCount: previousSessions.length,
+    newSessions: newSessions.map(s => ({ id: s.id.slice(0, 8), status: s.status, project: s.projectName })),
+    prevSessions: previousSessions.map(s => ({ id: s.id.slice(0, 8), status: s.status, project: s.projectName }))
+  });
+
+  if (!notificationConfig.enabled) {
+    console.log("[Claude Blocker] Notification check skipped - notifications disabled");
+    return;
+  }
 
   // Create maps for easier lookup
   const prevMap = new Map(previousSessions.map((s) => [s.id, s]));
@@ -553,6 +586,40 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((err) => {
         sendResponse({ success: false, error: String(err) });
       });
+    return true;
+  }
+
+  if (message.type === "TEST_NOTIFICATION") {
+    console.log("[Claude Blocker] Test notification requested");
+    // Temporarily enable notifications for the test
+    const testId = `test-${Date.now()}`;
+    chrome.notifications.create(testId, {
+      type: "basic",
+      iconUrl: "icon-128.png",
+      title: "Test Notification",
+      message: "If you see this, notifications are working!",
+      priority: 2,
+    }, (createdId) => {
+      if (chrome.runtime.lastError) {
+        console.error("[Claude Blocker] Test notification failed:", chrome.runtime.lastError);
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        console.log("[Claude Blocker] Test notification created:", createdId);
+        sendResponse({ success: true, notificationId: createdId });
+      }
+    });
+    return true;
+  }
+
+  if (message.type === "GET_NOTIFICATION_DEBUG") {
+    sendResponse({
+      success: true,
+      config: notificationConfig,
+      notificationCount,
+      serverConnected: state.serverConnected,
+      sessionsCount: state.sessions.length,
+      sessions: state.sessions.map(s => ({ id: s.id.slice(0, 8), status: s.status, project: s.projectName }))
+    });
     return true;
   }
 

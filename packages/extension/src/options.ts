@@ -165,6 +165,9 @@ const notificationsEnabled = document.getElementById("notifications-enabled") as
 const notifyWaiting = document.getElementById("notify-waiting") as HTMLInputElement;
 const notifyFinished = document.getElementById("notify-finished") as HTMLInputElement;
 const notifyDisconnected = document.getElementById("notify-disconnected") as HTMLInputElement;
+const testNotificationBtn = document.getElementById("test-notification-btn") as HTMLButtonElement;
+const notificationStatus = document.getElementById("notification-status") as HTMLSpanElement;
+const notificationDebugInfo = document.getElementById("notification-debug-info") as HTMLPreElement;
 
 // Terminal settings element
 const terminalApp = document.getElementById("terminal-app") as HTMLSelectElement;
@@ -1455,6 +1458,65 @@ notifyWaiting.addEventListener("change", handleNotificationChange);
 notifyFinished.addEventListener("change", handleNotificationChange);
 notifyDisconnected.addEventListener("change", handleNotificationChange);
 
+// Test notification button handler
+testNotificationBtn.addEventListener("click", async () => {
+  notificationStatus.textContent = "Testing...";
+  notificationStatus.className = "notification-status";
+
+  try {
+    const response = await new Promise<{ success: boolean; error?: string; notificationId?: string }>((resolve) => {
+      chrome.runtime.sendMessage({ type: "TEST_NOTIFICATION" }, resolve);
+    });
+
+    if (response.success) {
+      notificationStatus.textContent = `Success! ID: ${response.notificationId?.slice(0, 12)}...`;
+      notificationStatus.className = "notification-status success";
+      showToast("Test notification sent!", "success");
+    } else {
+      notificationStatus.textContent = `Failed: ${response.error}`;
+      notificationStatus.className = "notification-status error";
+      showToast(`Notification failed: ${response.error}`, "error");
+    }
+  } catch (error) {
+    notificationStatus.textContent = `Error: ${String(error)}`;
+    notificationStatus.className = "notification-status error";
+    showToast(`Error: ${String(error)}`, "error");
+  }
+
+  // Refresh debug info after test
+  updateNotificationDebugInfo();
+});
+
+// Update notification debug info
+async function updateNotificationDebugInfo(): Promise<void> {
+  try {
+    const response = await new Promise<{
+      success: boolean;
+      config: NotificationConfig;
+      notificationCount: number;
+      serverConnected: boolean;
+      sessionsCount: number;
+      sessions: Array<{ id: string; status: string; project: string }>;
+    }>((resolve) => {
+      chrome.runtime.sendMessage({ type: "GET_NOTIFICATION_DEBUG" }, resolve);
+    });
+
+    if (response.success) {
+      notificationDebugInfo.textContent = JSON.stringify({
+        config: response.config,
+        notificationsSent: response.notificationCount,
+        serverConnected: response.serverConnected,
+        activeSessions: response.sessionsCount,
+        sessions: response.sessions
+      }, null, 2);
+    } else {
+      notificationDebugInfo.textContent = "Failed to get debug info";
+    }
+  } catch (error) {
+    notificationDebugInfo.textContent = `Error: ${String(error)}`;
+  }
+}
+
 // Terminal settings event listener
 terminalApp.addEventListener("change", handleTerminalChange);
 
@@ -1477,6 +1539,7 @@ async function init(): Promise<void> {
   updateOverlaySettingsUI();
   updateNotificationSettingsUI();
   updateTerminalSettingsUI();
+  updateNotificationDebugInfo(); // Load notification debug info
   renderTimelineAxis(); // Initialize timeline axis
   renderHistory(); // Initialize history list
   refreshState();
