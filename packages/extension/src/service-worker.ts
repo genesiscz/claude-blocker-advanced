@@ -24,6 +24,27 @@ interface HistoricalSession {
   lastTool?: string;
   toolCount: number;
   totalDurationMs: number;
+  // Time breakdown per state
+  totalWorkingMs?: number;
+  totalWaitingMs?: number;
+  totalIdleMs?: number;
+  // Activity segments for timeline (timestamps in ms)
+  segments?: Array<{
+    status: "idle" | "working" | "waiting_for_input";
+    startTime: number;
+    endTime: number;
+  }>;
+  // Recent tool calls (up to 5)
+  recentTools?: Array<{
+    name: string;
+    timestamp: string;
+    input?: {
+      file_path?: string;
+      command?: string;
+      pattern?: string;
+      description?: string;
+    };
+  }>;
 }
 
 interface NotificationConfig {
@@ -66,10 +87,23 @@ interface DailyStats {
   sessionsEnded: number;
 }
 
+// Activity segment for timeline
+interface ActivitySegment {
+  status: "idle" | "working" | "waiting_for_input";
+  startTime: number; // timestamp in ms
+  endTime: number; // timestamp in ms
+}
+
 // Track state timestamps per session for stats calculation
 interface SessionStateTracking {
   lastStatus: "idle" | "working" | "waiting_for_input";
   lastStatusChangeTime: number; // timestamp in ms
+  // Accumulated time per state for this session
+  accumulatedWorkingMs: number;
+  accumulatedWaitingMs: number;
+  accumulatedIdleMs: number;
+  // Actual timeline segments (for history)
+  segments: ActivitySegment[];
 }
 
 const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
@@ -173,7 +207,10 @@ async function saveSessionHistory(history: HistoricalSession[]): Promise<void> {
 }
 
 // Add a session to history when it ends
-async function addSessionToHistory(session: Session): Promise<void> {
+async function addSessionToHistory(
+  session: Session,
+  tracking?: SessionStateTracking
+): Promise<void> {
   const now = Date.now();
   const startTimeMs = new Date(session.startTime).getTime();
   const totalDurationMs = now - startTimeMs;
@@ -188,6 +225,14 @@ async function addSessionToHistory(session: Session): Promise<void> {
     lastTool: session.lastTool,
     toolCount: session.toolCount,
     totalDurationMs,
+    // Include time breakdown if available
+    totalWorkingMs: tracking?.accumulatedWorkingMs,
+    totalWaitingMs: tracking?.accumulatedWaitingMs,
+    totalIdleMs: tracking?.accumulatedIdleMs,
+    // Include activity segments for timeline
+    segments: tracking?.segments,
+    // Include recent tools (up to 5)
+    recentTools: session.recentTools?.slice(0, 5),
   };
 
   const history = await loadSessionHistory();
@@ -226,6 +271,14 @@ async function updateDailyStats(
       sessionStateTracking.set(session.id, {
         lastStatus: session.status,
         lastStatusChangeTime: now,
+        accumulatedWorkingMs: 0,
+        accumulatedWaitingMs: 0,
+        accumulatedIdleMs: 0,
+        segments: [{
+          status: session.status,
+          startTime: now,
+          endTime: now,
+        }],
       });
     }
   }
@@ -242,22 +295,37 @@ async function updateDailyStats(
         switch (tracking.lastStatus) {
           case "working":
             stats.totalWorkingMs += timeInState;
+            tracking.accumulatedWorkingMs += timeInState;
             break;
           case "waiting_for_input":
             stats.totalWaitingMs += timeInState;
+            tracking.accumulatedWaitingMs += timeInState;
             break;
           case "idle":
             stats.totalIdleMs += timeInState;
+            tracking.accumulatedIdleMs += timeInState;
             break;
         }
+
+        // Close the last segment
+        const lastSegment = tracking.segments[tracking.segments.length - 1];
+        if (lastSegment) {
+          lastSegment.endTime = now;
+        }
+
+        // Add session to history with accumulated times and segments
+        addSessionToHistory(oldSession, tracking).catch((err) => {
+          console.error("[Claude Blocker Advanced] Failed to add session to history:", err);
+        });
+
         // Clean up tracking for ended session
         sessionStateTracking.delete(oldSession.id);
+      } else {
+        // No tracking data, add with just session info
+        addSessionToHistory(oldSession).catch((err) => {
+          console.error("[Claude Blocker Advanced] Failed to add session to history:", err);
+        });
       }
-
-      // Add session to history
-      addSessionToHistory(oldSession).catch((err) => {
-        console.error("[Claude Blocker Advanced] Failed to add session to history:", err);
-      });
     }
   }
 
@@ -272,27 +340,56 @@ async function updateDailyStats(
         // Calculate time spent in previous state
         const timeInPreviousState = now - tracking.lastStatusChangeTime;
 
+        // Update daily stats
         switch (tracking.lastStatus) {
           case "working":
             stats.totalWorkingMs += timeInPreviousState;
+            tracking.accumulatedWorkingMs += timeInPreviousState;
             break;
           case "waiting_for_input":
             stats.totalWaitingMs += timeInPreviousState;
+            tracking.accumulatedWaitingMs += timeInPreviousState;
             break;
           case "idle":
             stats.totalIdleMs += timeInPreviousState;
+            tracking.accumulatedIdleMs += timeInPreviousState;
             break;
         }
+
+        // Close the last segment and start a new one
+        const lastSegment = tracking.segments[tracking.segments.length - 1];
+        if (lastSegment) {
+          lastSegment.endTime = now;
+        }
+        tracking.segments.push({
+          status: newSession.status,
+          startTime: now,
+          endTime: now,
+        });
 
         // Update tracking with new state
         tracking.lastStatus = newSession.status;
         tracking.lastStatusChangeTime = now;
+      } else {
+        // Status unchanged - just update the endTime of the last segment
+        const lastSegment = tracking.segments[tracking.segments.length - 1];
+        if (lastSegment) {
+          lastSegment.endTime = now;
+        }
       }
     } else if (oldSession) {
       // Session exists but wasn't being tracked (edge case after service worker restart)
       sessionStateTracking.set(newSession.id, {
         lastStatus: newSession.status,
         lastStatusChangeTime: now,
+        accumulatedWorkingMs: 0,
+        accumulatedWaitingMs: 0,
+        accumulatedIdleMs: 0,
+        segments: [{
+          status: newSession.status,
+          startTime: now,
+          endTime: now,
+        }],
       });
     }
   }

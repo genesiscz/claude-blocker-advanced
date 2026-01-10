@@ -46,6 +46,27 @@ interface HistoricalSession {
   lastTool?: string;
   toolCount: number;
   totalDurationMs: number;
+  // Time breakdown per state
+  totalWorkingMs?: number;
+  totalWaitingMs?: number;
+  totalIdleMs?: number;
+  // Activity segments for timeline (timestamps in ms)
+  segments?: Array<{
+    status: "idle" | "working" | "waiting_for_input";
+    startTime: number;
+    endTime: number;
+  }>;
+  // Recent tool calls (up to 5)
+  recentTools?: Array<{
+    name: string;
+    timestamp: string;
+    input?: {
+      file_path?: string;
+      command?: string;
+      pattern?: string;
+      description?: string;
+    };
+  }>;
 }
 
 interface ExtensionState {
@@ -1019,16 +1040,33 @@ function renderTimeline(sessions: Session[]): void {
     if (sessionActivities.has(hist.id)) continue;
     if (endTimeMs < cutoff) continue;
 
-    // Add historical session as a completed segment
-    sessionActivities.set(hist.id, {
-      sessionId: hist.id,
-      projectName: hist.projectName,
-      segments: [{
-        status: "idle", // Completed sessions show as idle/gray
+    // Use actual segments if available, otherwise create a single segment
+    let segments: ActivitySegment[];
+    if (hist.segments && hist.segments.length > 0) {
+      // Use the stored segments (clip to timeline window)
+      segments = hist.segments
+        .filter(seg => seg.endTime > cutoff)
+        .map(seg => ({
+          status: seg.status,
+          startTime: Math.max(seg.startTime, cutoff),
+          endTime: seg.endTime,
+        }));
+    } else {
+      // Fallback: create single idle segment for old history entries
+      segments = [{
+        status: "idle" as const,
         startTime: Math.max(startTimeMs, cutoff),
         endTime: endTimeMs,
-      }]
-    });
+      }];
+    }
+
+    if (segments.length > 0) {
+      sessionActivities.set(hist.id, {
+        sessionId: hist.id,
+        projectName: hist.projectName,
+        segments,
+      });
+    }
   }
 
   const activitiesToRender: SessionActivity[] = [];
@@ -1046,8 +1084,16 @@ function renderTimeline(sessions: Session[]): void {
     return;
   }
 
-  // Sort by most recent activity (descending) and limit to 10
+  // Sort: active sessions first (by project name), then history by end time (descending)
   activitiesToRender.sort((a, b) => {
+    const aIsActive = activeSessionIds.has(a.sessionId);
+    const bIsActive = activeSessionIds.has(b.sessionId);
+
+    // Active sessions come first
+    if (aIsActive && !bIsActive) return -1;
+    if (!aIsActive && bIsActive) return 1;
+
+    // Within same category, sort by last activity time (descending)
     const aLast = a.segments[a.segments.length - 1]?.endTime ?? 0;
     const bLast = b.segments[b.segments.length - 1]?.endTime ?? 0;
     return bLast - aLast;
@@ -1478,6 +1524,32 @@ function renderHistory(): void {
     const toolHtml = session.lastTool
       ? `<span class="history-tool">${session.lastTool}</span>` : "";
 
+    // Render recent tools if available (similar to session cards)
+    let toolsHtml = "";
+    if (session.recentTools && session.recentTools.length > 0) {
+      const endTimeMs = new Date(session.endTime).getTime();
+      const toolRows = session.recentTools.map((tool, i) => {
+        const toolTimeMs = new Date(tool.timestamp).getTime();
+        const timeSinceEnd = endTimeMs - toolTimeMs;
+        const timeStr = formatToolRelativeTime(timeSinceEnd);
+        const detail = formatToolDetail(tool);
+        const latestClass = i === 0 ? "latest" : "";
+        const detailHtml = detail ? `<span class="tool-detail" title="${detail}">${detail}</span>` : "";
+        const descHtml = tool.input?.description
+          ? `<div class="tool-desc">${tool.input.description.length > 80 ? tool.input.description.slice(0, 80) + "…" : tool.input.description}</div>`
+          : "";
+        return `<div class="tool-row ${latestClass}">
+          <div class="tool-row-main">
+            <span class="tool-name">${tool.name}</span>
+            ${detailHtml}
+            <span class="tool-time">${timeStr}</span>
+          </div>
+          ${descHtml}
+        </div>`;
+      });
+      toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
+    }
+
     return `
       <div class="history-card">
         <div class="history-info">
@@ -1488,6 +1560,7 @@ function renderHistory(): void {
             <span class="history-duration">${duration}</span>
             ${toolHtml}
           </div>
+          ${toolsHtml}
         </div>
         ${actionsHtml}
         <span class="history-id" title="Click to copy">${session.id.substring(0, 8)}</span>
