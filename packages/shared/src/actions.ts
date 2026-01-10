@@ -1,11 +1,15 @@
 // Shared action handlers for session management
 
+import type { EditorApp } from "./types";
+import { EDITOR_COMMANDS } from "./types";
+
 const SERVER_URL = "http://localhost:8765";
 
 export interface SessionActionParams {
   sessionId?: string;
   cwd?: string;
   terminalApp?: string;
+  editorApp?: EditorApp;
 }
 
 /**
@@ -77,6 +81,35 @@ export async function openInTerminal(
 }
 
 /**
+ * Open project in code editor
+ * Falls back to copying command to clipboard if server request fails
+ */
+export async function openInEditor(
+  cwd: string,
+  editorApp: EditorApp = "cursor"
+): Promise<void> {
+  try {
+    const response = await fetch(`${SERVER_URL}/action/open-editor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: cwd,
+        app: editorApp,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to open editor: ${response.statusText}`);
+    }
+  } catch (err) {
+    // Fallback: copy editor command to clipboard
+    const editorCommand = EDITOR_COMMANDS[editorApp];
+    await navigator.clipboard.writeText(`${editorCommand} "${cwd}"`);
+    throw err; // Re-throw so caller knows it fell back
+  }
+}
+
+/**
  * Execute a session action based on action type
  */
 export async function executeSessionAction(
@@ -111,6 +144,18 @@ export async function executeSessionAction(
         }
         try {
           await openInTerminal(params.cwd, params.sessionId, params.terminalApp);
+          return { success: true };
+        } catch (err) {
+          // Fallback succeeded (copied to clipboard)
+          return { success: true, fallback: true };
+        }
+
+      case "open-editor":
+        if (!params.cwd) {
+          throw new Error("Working directory required");
+        }
+        try {
+          await openInEditor(params.cwd, params.editorApp);
           return { success: true };
         } catch (err) {
           // Fallback succeeded (copied to clipboard)

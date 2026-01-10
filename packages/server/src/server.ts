@@ -145,6 +145,47 @@ export function startServer(port: number = DEFAULT_PORT): void {
       return;
     }
 
+    // Action: Open in Editor (macOS)
+    if (req.method === "POST" && url.pathname === "/action/open-editor") {
+      try {
+        const body = await parseBody(req);
+        const { path, app } = JSON.parse(body) as {
+          path: string;
+          app: "cursor" | "vscode" | "windsurf" | "zed" | "sublime" | "webstorm";
+        };
+
+        if (!path || !app) {
+          sendJson(res, { success: false, error: "path and app are required" }, 400);
+          return;
+        }
+
+        // CLI commands for each editor
+        const editorCommands: Record<string, string> = {
+          cursor: "cursor",
+          vscode: "code",
+          windsurf: "windsurf",
+          zed: "zed",
+          sublime: "subl",
+          webstorm: "webstorm",
+        };
+
+        const editorCommand = editorCommands[app];
+        if (!editorCommand) {
+          sendJson(res, { success: false, error: `Unknown editor app: ${app}` }, 400);
+          return;
+        }
+
+        // Editors typically open via their CLI directly
+        const escapedPath = path.replace(/"/g, '\\"');
+        execSync(`${editorCommand} "${escapedPath}"`);
+
+        sendJson(res, { success: true });
+      } catch (error) {
+        sendJson(res, { success: false, error: String(error) }, 500);
+      }
+      return;
+    }
+
     // 404 for unknown routes
     sendJson(res, { error: "Not found" }, 404);
   });

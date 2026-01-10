@@ -143,3 +143,39 @@ export const TERMINAL_OPTIONS: { value: TerminalApp; label: string }[] = [
   { value: "terminal", label: "Terminal.app" },
   { value: "ghostty", label: "Ghostty" },
 ];
+
+// Editor application options
+export type EditorApp =
+  | "cursor"
+  | "vscode"
+  | "windsurf"
+  | "zed"
+  | "sublime"
+  | "webstorm";
+
+export interface EditorConfig {
+  app: EditorApp;
+}
+
+export const DEFAULT_EDITOR_CONFIG: EditorConfig = {
+  app: "cursor",
+};
+
+export const EDITOR_OPTIONS: { value: EditorApp; label: string }[] = [
+  { value: "cursor", label: "Cursor" },
+  { value: "vscode", label: "VS Code" },
+  { value: "windsurf", label: "Windsurf" },
+  { value: "zed", label: "Zed" },
+  { value: "sublime", label: "Sublime Text" },
+  { value: "webstorm", label: "WebStorm" },
+];
+
+// CLI commands for each editor
+export const EDITOR_COMMANDS: Record<EditorApp, string> = {
+  cursor: "cursor",
+  vscode: "code",
+  windsurf: "windsurf",
+  zed: "zed",
+  sublime: "subl",
+  webstorm: "webstorm",
+};

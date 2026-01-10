@@ -314,9 +314,11 @@ function createOverlay(): void {
     <style>
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
       .overlay { all: initial; position: fixed; ${getPositionStyles()} z-index: 2147483645; font-family: Arial, Helvetica, sans-serif; opacity: ${overlayConfig.opacity}; }
+      .pill-wrapper { position: relative; }
+      .pill-wrapper::after { content: ''; position: absolute; left: -10px; right: -10px; height: 20px; ${overlayConfig.position.includes("bottom") ? "top: -20px;" : "bottom: -20px;"} }
       .pill { background: #1a1a1a; border: 1px solid #333; border-radius: 20px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.3); position: relative; }
       .pill:hover { background: #222; border-color: #444; }
-      .pill:hover .sessions-list, .sessions-list:hover { display: block; }
+      .pill-wrapper:hover .sessions-list { display: block; }
       .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
       .status-dot.working { background: #30d158; box-shadow: 0 0 6px #30d158; }
       .status-dot.waiting { background: #ffd60a; box-shadow: 0 0 6px #ffd60a; animation: pulse 1.5s ease-in-out infinite; }
@@ -324,7 +326,6 @@ function createOverlay(): void {
       .status-dot.offline { background: #ff453a; box-shadow: 0 0 6px #ff453a; }
       .label { color: #999; font-size: 12px; font-weight: 500; }
       .sessions-list { display: none; position: absolute; ${getSessionsListPositionStyles()} background: #1a1a1a; border: 1px solid #333; border-radius: 12px; min-width: 300px; max-width: 380px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-      .sessions-list::before { content: ''; position: absolute; left: 0; right: 0; height: 8px; ${overlayConfig.position.includes("bottom") ? "bottom: 100%;" : "top: -8px;"} }
       .session-item { padding: 12px; border-bottom: 1px solid #2a2a2a; position: relative; }
       .session-item:hover { background: #1f1f1f; }
       .session-item:last-child { border-bottom: none; }
@@ -345,15 +346,24 @@ function createOverlay(): void {
       .tool-row.latest .tool-time { color: #555; }
       .no-sessions { padding: 16px; text-align: center; color: #666; font-size: 12px; }
       .session-actions { display: flex; gap: 4px; margin-top: 8px; margin-left: 16px; }
-      .action-btn { all: initial; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #2a2a2a; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+      .action-btn { all: initial; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #2a2a2a; border-radius: 6px; cursor: pointer; transition: all 0.15s; position: relative; }
       .action-btn:hover { background: #333; transform: translateY(-1px); }
       .action-btn svg { width: 12px; height: 12px; stroke: #888; stroke-width: 2; fill: none; }
       .action-btn:hover svg { stroke: #fff; }
+      .action-btn[data-tooltip]::before { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 5px 8px; background: #252525; border: 1px solid #444; border-radius: 5px; font-size: 10px; font-weight: 500; color: #aaa; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; margin-bottom: 5px; z-index: 1000; font-family: Arial, Helvetica, sans-serif; }
+      .action-btn:hover[data-tooltip]::before { opacity: 1; }
+      .overlay-toast { position: fixed; bottom: 80px; right: 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #fff; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.2s ease; z-index: 2147483647; font-family: Arial, Helvetica, sans-serif; }
+      .overlay-toast.toast-out { animation: toast-out 0.2s ease forwards; }
+      .overlay-toast svg { width: 14px; height: 14px; stroke: #30d158; stroke-width: 2; fill: none; flex-shrink: 0; }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
     </style>
     <div class="overlay">
-      <div class="pill">
-        <span class="status-dot" id="overlay-dot"></span>
-        <span class="label" id="overlay-label">—</span>
+      <div class="pill-wrapper">
+        <div class="pill">
+          <span class="status-dot" id="overlay-dot"></span>
+          <span class="label" id="overlay-label">—</span>
+        </div>
         <div class="sessions-list" id="overlay-sessions"></div>
       </div>
     </div>
@@ -364,6 +374,32 @@ function createOverlay(): void {
 
 function removeOverlay(): void {
   getOverlay()?.remove();
+}
+
+// Show a toast notification in the overlay
+function showOverlayToast(message: string): void {
+  const shadow = getOverlay()?.shadowRoot;
+  if (!shadow) return;
+
+  // Remove any existing toast
+  const existingToast = shadow.querySelector(".overlay-toast");
+  if (existingToast) {
+    existingToast.remove();
+  }
+
+  const toast = document.createElement("div");
+  toast.className = "overlay-toast";
+  toast.innerHTML = `
+    <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+    <span>${message}</span>
+  `;
+
+  shadow.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    setTimeout(() => toast.remove(), 200);
+  }, 2000);
 }
 
 function updateOverlay(state: PublicState): void {
@@ -449,23 +485,26 @@ function updateOverlay(state: PublicState): void {
           toolsHtml = `<div class="session-tools">${toolRows.join("")}</div>`;
         }
 
-        // Action buttons - use initialCwd (original project dir) for folder/terminal actions
+        // Action buttons - use initialCwd (original project dir) for folder/terminal/editor actions
         const actionCwd = s.initialCwd || s.cwd;
         const actionsHtml = `
           <div class="session-actions">
-            <button class="action-btn" data-action="copy-id" data-session-id="${s.id}" title="Copy session ID">
+            <button class="action-btn" data-action="copy-id" data-session-id="${s.id}" data-project-name="${s.projectName}" data-tooltip="Copy session ID">
               <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
             ${actionCwd ? `
-            <button class="action-btn" data-action="open-folder" data-cwd="${actionCwd}" title="Open in Finder">
+            <button class="action-btn" data-action="open-folder" data-cwd="${actionCwd}" data-project-name="${s.projectName}" data-tooltip="Open in Finder">
               <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             </button>
-            <button class="action-btn" data-action="open-terminal" data-cwd="${actionCwd}" data-session-id="${s.id}" title="Resume in Terminal">
+            <button class="action-btn" data-action="open-terminal" data-cwd="${actionCwd}" data-session-id="${s.id}" data-project-name="${s.projectName}" data-tooltip="Resume in Terminal">
               <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
             </button>
+            <button class="action-btn" data-action="open-editor" data-cwd="${actionCwd}" data-project-name="${s.projectName}" data-tooltip="Open in Editor">
+              <svg viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            </button>
             ` : ""}
-            <button class="action-btn" data-action="copy-command" data-session-id="${s.id}" title="Copy resume command">
-              <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <button class="action-btn" data-action="copy-command" data-session-id="${s.id}" data-project-name="${s.projectName}" data-tooltip="Copy resume command">
+              <svg viewBox="0 0 24 24"><polyline points="8 6 2 12 8 18"/><polyline points="16 6 22 12 16 18"/></svg>
             </button>
           </div>
         `;
@@ -491,13 +530,53 @@ function updateOverlay(state: PublicState): void {
         e.stopPropagation();
         const target = e.currentTarget as HTMLElement;
         const action = target.dataset.action;
+        const projectName = target.dataset.projectName || "Project";
+        const sessionId = target.dataset.sessionId || "";
 
         if (action) {
-          await executeSessionAction(action, {
+          // Load terminal and editor config from storage
+          const configs = await new Promise<{ terminalConfig?: { app?: string }; editorConfig?: { app?: string } }>((resolve) => {
+            chrome.storage.sync.get(["terminalConfig", "editorConfig"], (result) => {
+              resolve({
+                terminalConfig: result.terminalConfig || { app: "warp" },
+                editorConfig: result.editorConfig || { app: "cursor" },
+              });
+            });
+          });
+
+          const result = await executeSessionAction(action, {
             sessionId: target.dataset.sessionId,
             cwd: target.dataset.cwd,
-            terminalApp: "warp", // Could be made configurable
+            terminalApp: configs.terminalConfig?.app || "warp",
+            editorApp: (configs.editorConfig?.app || "cursor") as "cursor" | "vscode" | "windsurf" | "zed" | "sublime" | "webstorm",
           });
+
+          // Show toast based on action
+          if (action === "copy-id") {
+            showOverlayToast(`Copied session ID: ${sessionId.substring(0, 8)}...`);
+          } else if (action === "copy-command") {
+            showOverlayToast(`Copied: claude --resume ${sessionId.substring(0, 8)}...`);
+          } else if (action === "open-folder") {
+            if (result.success && !result.fallback) {
+              showOverlayToast(`Opened ${projectName} in Finder`);
+            } else {
+              showOverlayToast(`Copied path to clipboard`);
+            }
+          } else if (action === "open-terminal") {
+            const terminalApp = configs.terminalConfig?.app || "warp";
+            if (result.success && !result.fallback) {
+              showOverlayToast(`Opened ${projectName} in ${terminalApp}`);
+            } else {
+              showOverlayToast(`Copied resume command to clipboard`);
+            }
+          } else if (action === "open-editor") {
+            const editorApp = configs.editorConfig?.app || "cursor";
+            if (result.success && !result.fallback) {
+              showOverlayToast(`Opened ${projectName} in ${editorApp}`);
+            } else {
+              showOverlayToast(`Copied editor command to clipboard`);
+            }
+          }
         }
       });
     });

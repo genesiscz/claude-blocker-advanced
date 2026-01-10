@@ -187,6 +187,44 @@ async function openFolder(cwd: string): Promise<void> {
   }
 }
 
+// Handle open in editor action
+async function openInEditor(cwd: string): Promise<void> {
+  // Load editor config
+  const config = await new Promise<{ app?: string }>((resolve) => {
+    chrome.storage.sync.get(["editorConfig"], (result) => {
+      resolve(result.editorConfig || { app: "cursor" });
+    });
+  });
+
+  try {
+    const response = await fetch(`${SERVER_URL}/action/open-editor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: cwd,
+        app: config.app || "cursor",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to open editor: ${response.statusText}`);
+    }
+  } catch (err) {
+    // Fallback: copy editor command to clipboard
+    const editorCommands: Record<string, string> = {
+      cursor: "cursor",
+      vscode: "code",
+      windsurf: "windsurf",
+      zed: "zed",
+      sublime: "subl",
+      webstorm: "webstorm",
+    };
+    const cmd = editorCommands[config.app || "cursor"] || "cursor";
+    await navigator.clipboard.writeText(`${cmd} "${cwd}"`);
+    console.log("Editor action fell back to copying command to clipboard");
+  }
+}
+
 function renderSession(session: Session): HTMLElement {
   const now = Date.now();
   const startTime = new Date(session.startTime).getTime();
@@ -245,6 +283,11 @@ function renderSession(session: Session): HTMLElement {
             <line x1="12" y1="19" x2="20" y2="19"/>
           </svg>
         </button>
+        <button class="action-btn editor-btn" title="Open in editor" data-cwd="${session.cwd}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+          </svg>
+        </button>
       ` : ""}
     </div>
     <div class="session-details">
@@ -275,6 +318,14 @@ function renderSession(session: Session): HTMLElement {
     terminalBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       openInTerminal(session.cwd!, session.id);
+    });
+  }
+
+  const editorBtn = el.querySelector(".editor-btn");
+  if (editorBtn && session.cwd) {
+    editorBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openInEditor(session.cwd!);
     });
   }
 

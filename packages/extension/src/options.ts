@@ -97,6 +97,12 @@ interface TerminalConfig {
   app: TerminalApp;
 }
 
+type EditorApp = "cursor" | "vscode" | "windsurf" | "zed" | "sublime" | "webstorm";
+
+interface EditorConfig {
+  app: EditorApp;
+}
+
 // Timeline activity tracking
 interface ActivitySegment {
   status: "idle" | "working" | "waiting_for_input";
@@ -140,6 +146,10 @@ const DEFAULT_SOUND_CONFIG: SoundConfig = {
 
 const DEFAULT_TERMINAL_CONFIG: TerminalConfig = {
   app: "warp",
+};
+
+const DEFAULT_EDITOR_CONFIG: EditorConfig = {
+  app: "cursor",
 };
 
 // Timeline constants
@@ -205,6 +215,9 @@ const testSoundSay = document.getElementById("test-sound-say") as HTMLButtonElem
 // Terminal settings element
 const terminalApp = document.getElementById("terminal-app") as HTMLSelectElement;
 
+// Editor settings element
+const editorApp = document.getElementById("editor-app") as HTMLSelectElement;
+
 // Tab elements
 const tabButtons = document.querySelectorAll(".tab-btn") as NodeListOf<HTMLButtonElement>;
 const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTMLElement>;
@@ -218,6 +231,7 @@ let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
 let currentNotificationConfig: NotificationConfig = DEFAULT_NOTIFICATION_CONFIG;
 let currentSoundConfig: SoundConfig = DEFAULT_SOUND_CONFIG;
 let currentTerminalConfig: TerminalConfig = DEFAULT_TERMINAL_CONFIG;
+let currentEditorConfig: EditorConfig = DEFAULT_EDITOR_CONFIG;
 let lastSessions: Session[] = [];
 let currentSortMode: SortMode = "status";
 let lastSortMode: SortMode = "status"; // Track previous sort mode for change detection
@@ -530,6 +544,26 @@ async function loadTerminalConfig(): Promise<TerminalConfig> {
 async function saveTerminalConfig(config: TerminalConfig): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.sync.set({ terminalConfig: config }, resolve);
+  });
+}
+
+// Load editor config from storage
+async function loadEditorConfig(): Promise<EditorConfig> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(["editorConfig"], (result) => {
+      if (result.editorConfig) {
+        resolve({ ...DEFAULT_EDITOR_CONFIG, ...result.editorConfig });
+      } else {
+        resolve(DEFAULT_EDITOR_CONFIG);
+      }
+    });
+  });
+}
+
+// Save editor config to storage
+async function saveEditorConfig(config: EditorConfig): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ editorConfig: config }, resolve);
   });
 }
 
@@ -968,6 +1002,10 @@ function renderSessions(sessions: Session[]): void {
       <polyline points="16,6 22,12 16,18"/>
     </svg>`;
 
+    const editorIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+    </svg>`;
+
     const actionsHtml = `
       <div class="session-actions">
         <button class="session-action-btn copy-id-btn" data-session-index="${index}" data-tooltip="Copy session ID">
@@ -979,6 +1017,9 @@ function renderSessions(sessions: Session[]): void {
         </button>
         <button class="session-action-btn open-terminal-btn" data-session-index="${index}" data-tooltip="Resume in Terminal">
           ${terminalIcon}
+        </button>
+        <button class="session-action-btn open-editor-btn" data-session-index="${index}" data-tooltip="Open in Editor">
+          ${editorIcon}
         </button>
         ` : ""}
         <button class="session-action-btn copy-command-btn" data-session-index="${index}" data-tooltip="Copy resume command">
@@ -1064,6 +1105,27 @@ function renderSessions(sessions: Session[]): void {
           showToast(`Opened <strong>${session.projectName}</strong> in ${currentTerminalConfig.app}`);
         } else {
           showToast(`Copied resume command to clipboard`, "info");
+        }
+      }
+    });
+  });
+
+  sessionsList.querySelectorAll(".open-editor-btn").forEach((btn) => {
+    const button = btn as HTMLButtonElement;
+    const index = parseInt(button.dataset.sessionIndex || "0", 10);
+    button.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const session = sorted[index];
+      const actionCwd = session.initialCwd || session.cwd;
+      if (actionCwd) {
+        const result = await executeSessionAction("open-editor", {
+          cwd: actionCwd,
+          editorApp: currentEditorConfig.app,
+        });
+        if (result.success && !result.fallback) {
+          showToast(`Opened <strong>${session.projectName}</strong> in ${currentEditorConfig.app}`);
+        } else {
+          showToast(`Copied editor command to clipboard`, "info");
         }
       }
     });
@@ -1385,6 +1447,19 @@ async function handleTerminalChange(): Promise<void> {
   await saveTerminalConfig(currentTerminalConfig);
 }
 
+// Update editor settings UI
+function updateEditorSettingsUI(): void {
+  editorApp.value = currentEditorConfig.app;
+}
+
+// Handle editor settings changes
+async function handleEditorChange(): Promise<void> {
+  currentEditorConfig = {
+    app: editorApp.value as EditorApp,
+  };
+  await saveEditorConfig(currentEditorConfig);
+}
+
 // Add a domain
 async function addDomain(raw: string): Promise<void> {
   const domain = normalizeDomain(raw);
@@ -1673,6 +1748,9 @@ async function updateNotificationDebugInfo(): Promise<void> {
 // Terminal settings event listener
 terminalApp.addEventListener("change", handleTerminalChange);
 
+// Editor settings event listener
+editorApp.addEventListener("change", handleEditorChange);
+
 // Sound settings event listeners
 soundEnabled.addEventListener("change", handleSoundChange);
 soundVolume.addEventListener("input", handleSoundChange);
@@ -1699,6 +1777,7 @@ async function init(): Promise<void> {
   currentNotificationConfig = await loadNotificationConfig();
   currentSoundConfig = await loadSoundConfig();
   currentTerminalConfig = await loadTerminalConfig();
+  currentEditorConfig = await loadEditorConfig();
   sessionHistory = await loadSessionHistory();
 
   renderDomains();
@@ -1706,6 +1785,7 @@ async function init(): Promise<void> {
   updateNotificationSettingsUI();
   updateSoundSettingsUI();
   updateTerminalSettingsUI();
+  updateEditorSettingsUI();
   updateNotificationDebugInfo(); // Load notification debug info
   renderTimelineAxis(); // Initialize timeline axis
   renderHistory(); // Initialize history list
