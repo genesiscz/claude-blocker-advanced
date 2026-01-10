@@ -151,13 +151,18 @@ chrome.runtime.onMessage.addListener((message: OffscreenMessage, _sender, sendRe
         .then(() => sendResponse({ success: true }))
         .catch((error) => sendResponse({ success: false, error: String(error) }));
     } else if (message.sound === "subtle" || message.sound === "clear") {
-      playSound(message.sound, message.volume)
-        .then(() => sendResponse({ success: true }))
-        .catch((error) => sendResponse({ success: false, error: String(error) }));
+      try {
+        playSound(message.sound, message.volume);
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({ success: false, error: String(error) });
+      }
+      return false; // Synchronous response
     } else {
       sendResponse({ success: false, error: "Invalid sound type" });
+      return false;
     }
-    return true; // Async response
+    return true; // Async response for "say"
   }
 
   if (message.type === "STOP_SOUND") {

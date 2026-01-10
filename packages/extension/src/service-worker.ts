@@ -523,6 +523,26 @@ function sendNotification(title: string, message: string, notificationId?: strin
   });
 }
 
+// Broadcast overlay toast notification to all content scripts
+function broadcastOverlayNotification(
+  event: "waiting" | "finished" | "disconnected",
+  projectName: string,
+  message: string
+): void {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: "OVERLAY_NOTIFICATION",
+          event,
+          projectName,
+          message,
+        }).catch(() => {});
+      }
+    }
+  });
+}
+
 // Check for session state changes and send notifications
 function checkForNotifications(newSessions: Session[]): void {
   console.log("[Claude Blocker Advanced] checkForNotifications called:", {
@@ -548,16 +568,21 @@ function checkForNotifications(newSessions: Session[]): void {
 
     // Session became "waiting_for_input"
     if (
-      notificationConfig.onWaiting &&
       session.status === "waiting_for_input" &&
       prev?.status !== "waiting_for_input"
     ) {
       const message = `${session.projectName} is waiting for your input`;
-      sendNotification(
-        "Claude has a question",
-        message,
-        `waiting-${session.id}`
-      );
+
+      // Broadcast to overlay (always, regardless of notification config)
+      broadcastOverlayNotification("waiting", session.projectName, message);
+
+      if (notificationConfig.onWaiting) {
+        sendNotification(
+          "Claude has a question",
+          message,
+          `waiting-${session.id}`
+        );
+      }
       // Play sound based on config
       const soundStyle = soundConfig.perEvent.onWaiting;
       if (soundStyle === "say") {
@@ -569,16 +594,21 @@ function checkForNotifications(newSessions: Session[]): void {
 
     // Session finished working (was working, now idle)
     if (
-      notificationConfig.onFinished &&
       session.status === "idle" &&
       prev?.status === "working"
     ) {
       const message = `${session.projectName} has completed its task`;
-      sendNotification(
-        "Claude finished working",
-        message,
-        `finished-${session.id}`
-      );
+
+      // Broadcast to overlay (always, regardless of notification config)
+      broadcastOverlayNotification("finished", session.projectName, message);
+
+      if (notificationConfig.onFinished) {
+        sendNotification(
+          "Claude finished working",
+          message,
+          `finished-${session.id}`
+        );
+      }
       // Play sound based on config
       const soundStyle = soundConfig.perEvent.onFinished;
       if (soundStyle === "say") {
@@ -590,22 +620,26 @@ function checkForNotifications(newSessions: Session[]): void {
   }
 
   // Check for disconnected sessions (was in prev, not in new)
-  if (notificationConfig.onDisconnected) {
-    for (const prev of previousSessions) {
-      if (!newMap.has(prev.id)) {
-        const message = `${prev.projectName} has ended`;
+  for (const prev of previousSessions) {
+    if (!newMap.has(prev.id)) {
+      const message = `${prev.projectName} has ended`;
+
+      // Broadcast to overlay (always, regardless of notification config)
+      broadcastOverlayNotification("disconnected", prev.projectName, message);
+
+      if (notificationConfig.onDisconnected) {
         sendNotification(
           "Session disconnected",
           message,
           `disconnected-${prev.id}`
         );
-        // Play sound based on config
-        const soundStyle = soundConfig.perEvent.onDisconnected;
-        if (soundStyle === "say") {
-          playSound(soundStyle, message);
-        } else {
-          playSound(soundStyle);
-        }
+      }
+      // Play sound based on config
+      const soundStyle = soundConfig.perEvent.onDisconnected;
+      if (soundStyle === "say") {
+        playSound(soundStyle, message);
+      } else {
+        playSound(soundStyle);
       }
     }
   }

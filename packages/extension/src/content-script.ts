@@ -373,8 +373,38 @@ function removeOverlay(): void {
 
 const OVERLAY_TOAST_ID = "claude-blocker-overlay-toast";
 
+type ToastType = "success" | "info" | "warning" | "error";
+
+// Get icon SVG based on toast type
+function getToastIcon(type: ToastType): string {
+  switch (type) {
+    case "success":
+      return `<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`;
+    case "info":
+      return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+    case "warning":
+      return `<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    case "error":
+      return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+  }
+}
+
+// Get icon color based on toast type
+function getToastColor(type: ToastType): string {
+  switch (type) {
+    case "success":
+      return "#30d158"; // Green
+    case "info":
+      return "#0a84ff"; // Blue
+    case "warning":
+      return "#ffd60a"; // Yellow
+    case "error":
+      return "#ff453a"; // Red
+  }
+}
+
 // Show a toast notification (separate shadow DOM for reliability)
-function showOverlayToast(message: string): void {
+function showOverlayToast(message: string, type: ToastType = "success"): void {
   // Remove any existing toast
   document.getElementById(OVERLAY_TOAST_ID)?.remove();
 
@@ -382,16 +412,19 @@ function showOverlayToast(message: string): void {
   container.id = OVERLAY_TOAST_ID;
   const shadow = container.attachShadow({ mode: "open" });
 
+  const iconColor = getToastColor(type);
+  const iconSvg = getToastIcon(type);
+
   shadow.innerHTML = `
     <style>
-      .toast { all: initial; position: fixed; bottom: 80px; right: 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #fff; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.2s ease; z-index: 2147483647; font-family: Arial, Helvetica, sans-serif; }
+      .toast { all: initial; position: fixed; bottom: 80px; right: 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 12px 18px; font-size: 13px; color: #fff; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.2s ease; z-index: 2147483647; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
       .toast.out { animation: toast-out 0.2s ease forwards; }
-      .toast svg { width: 14px; height: 14px; stroke: #30d158; stroke-width: 2; fill: none; flex-shrink: 0; }
+      .toast svg { width: 16px; height: 16px; stroke: ${iconColor}; stroke-width: 2; fill: none; flex-shrink: 0; }
       @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
     </style>
     <div class="toast">
-      <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+      ${iconSvg}
       <span>${message}</span>
     </div>
   `;
@@ -404,7 +437,7 @@ function showOverlayToast(message: string): void {
       toastEl.classList.add("out");
       setTimeout(() => container.remove(), 200);
     }
-  }, 2000);
+  }, 2500);
 }
 
 function updateOverlay(state: PublicState): void {
@@ -711,6 +744,20 @@ function requestState(): void {
 
 // ============ MESSAGE LISTENERS ============
 
+// Map overlay notification events to toast types
+function getNotificationToastType(event: string): ToastType {
+  switch (event) {
+    case "waiting":
+      return "warning"; // Yellow - needs attention
+    case "finished":
+      return "success"; // Green - completed
+    case "disconnected":
+      return "error"; // Red - session ended
+    default:
+      return "info";
+  }
+}
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
     handleState(message);
@@ -726,6 +773,13 @@ chrome.runtime.onMessage.addListener((message) => {
     removeOverlay(); // Recreate with new config
     if (lastKnownState) {
       updateOverlay(lastKnownState);
+    }
+  }
+  if (message.type === "OVERLAY_NOTIFICATION") {
+    // Show toast for overlay notification events (if overlay is enabled)
+    if (shouldShowOverlay()) {
+      const toastType = getNotificationToastType(message.event);
+      showOverlayToast(message.message, toastType);
     }
   }
 });
