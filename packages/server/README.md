@@ -1,20 +1,22 @@
-# claude-blocker
+# claude-blocker-advanced
 
-CLI tool and server for [Claude Blocker](https://github.com/t3-content/claude-blocker) — block distracting websites unless Claude Code is actively running inference.
+CLI tool and server for [Claude Blocker Advanced](https://github.com/genesiscz/claude-blocker) — block distracting websites unless Claude Code is actively running inference.
+
+> **Fork of** [Theo's claude-blocker](https://github.com/T3-Content/claude-blocker) with advanced features.
 
 ## Installation
 
 ```bash
-npm install -g claude-blocker
+npm install -g claude-blocker-advanced
 # or
-npx claude-blocker
+npx claude-blocker-advanced
 ```
 
 ## Quick Start
 
 ```bash
 # First time setup (configures Claude Code hooks)
-npx claude-blocker --setup
+npx claude-blocker-advanced --setup
 
 # The server will start automatically after setup
 ```
@@ -23,19 +25,19 @@ npx claude-blocker --setup
 
 ```bash
 # Start server (default port 8765)
-npx claude-blocker
+npx claude-blocker-advanced
 
 # Start with setup (configures hooks if not already done)
-npx claude-blocker --setup
+npx claude-blocker-advanced --setup
 
 # Custom port
-npx claude-blocker --port 9000
+npx claude-blocker-advanced --port 9000
 
 # Remove hooks from Claude Code
-npx claude-blocker --remove
+npx claude-blocker-advanced --remove
 
 # Show help
-npx claude-blocker --help
+npx claude-blocker-advanced --help
 ```
 
 ## How It Works
@@ -81,7 +83,7 @@ Connect to `ws://localhost:8765/ws` to receive real-time state updates:
 ## Programmatic Usage
 
 ```typescript
-import { startServer } from 'claude-blocker';
+import { startServer } from 'claude-blocker-advanced';
 
 // Start on default port (8765)
 startServer();

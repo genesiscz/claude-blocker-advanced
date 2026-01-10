@@ -1,6 +1,6 @@
 {
-  "name": "@claude-blocker/extension",
-  "version": "0.0.2",
+  "name": "@claude-blocker-advanced/extension",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "dev": "pnpm build --watch",
     "typecheck": "tsc --noEmit",
     "pack": "node scripts/pack-crx.mjs",
-    "zip": "cd dist && zip -r ../claude-blocker.zip ."
+    "zip": "cd dist && zip -r ../claude-blocker-advanced.zip ."
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

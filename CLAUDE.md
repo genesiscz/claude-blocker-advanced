@@ -33,7 +33,7 @@ This is a pnpm/bun workspace monorepo with three packages:
 
 ```
 packages/
-├── server/     # Node.js HTTP + WebSocket server, CLI (published to npm as "claude-blocker")
+├── server/     # Node.js HTTP + WebSocket server, CLI (published to npm as "claude-blocker-advanced")
 ├── extension/  # Chrome extension (Manifest V3, IIFE bundles)
 └── shared/     # Shared TypeScript types (used as source, not built)
 ```

@@ -227,16 +227,16 @@ export function startServer(port: number = DEFAULT_PORT): void {
 
   server.listen(port, () => {
     console.log(`
-┌─────────────────────────────────────┐
-│                                     │
-│   Claude Blocker Server             │
-│                                     │
-│   HTTP:      http://localhost:${port}  │
-│   WebSocket: ws://localhost:${port}/ws │
-│                                     │
-│   Waiting for Claude Code hooks...  │
-│                                     │
-└─────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│                                           │
+│   Claude Blocker Advanced Server          │
+│                                           │
+│   HTTP:      http://localhost:${port}        │
+│   WebSocket: ws://localhost:${port}/ws       │
+│                                           │
+│   Waiting for Claude Code hooks...        │
+│                                           │
+└───────────────────────────────────────────┘
 `);
   });
 

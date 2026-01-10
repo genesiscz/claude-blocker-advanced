@@ -1,19 +1,19 @@
 {
-  "name": "claude-blocker",
-  "version": "0.0.2",
-  "description": "Block distracting websites unless Claude Code is actively running inference",
-  "author": "Theo Browne",
+  "name": "claude-blocker-advanced",
+  "version": "0.1.0",
+  "description": "Block distracting websites unless Claude Code is actively running inference. Fork of Theo's claude-blocker with advanced features.",
+  "author": "Martin Krizan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/t3-content/claude-blocker.git"
+    "url": "https://github.com/genesiscz/claude-blocker.git"
   },
-  "homepage": "https://github.com/t3-content/claude-blocker",
+  "homepage": "https://github.com/genesiscz/claude-blocker",
   "bugs": {
-    "url": "https://github.com/t3-content/claude-blocker/issues"
+    "url": "https://github.com/genesiscz/claude-blocker/issues"
   },
   "type": "module",
   "bin": {
-    "claude-blocker": "./dist/bin.js"
+    "claude-blocker-advanced": "./dist/bin.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
@@ -26,7 +26,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@claude-blocker/shared": "workspace:*",
+    "@claude-blocker-advanced/shared": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -1,8 +1,8 @@
-# Claude Blocker Roadmap
+# Claude Blocker Advanced Roadmap
 
 ## Overview
 
-Transform claude-blocker from a simple site blocker into a comprehensive Claude Code monitoring dashboard.
+Transform claude-blocker-advanced from a simple site blocker into a comprehensive Claude Code monitoring dashboard.
 
 ---
 

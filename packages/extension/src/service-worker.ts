@@ -256,7 +256,7 @@ async function updateDailyStats(
 
       // Add session to history
       addSessionToHistory(oldSession).catch((err) => {
-        console.error("[Claude Blocker] Failed to add session to history:", err);
+        console.error("[Claude Blocker Advanced] Failed to add session to history:", err);
       });
     }
   }
@@ -356,10 +356,10 @@ async function ensureOffscreenDocument(): Promise<boolean> {
       justification: "Play notification sounds",
     });
     offscreenCreated = true;
-    console.log("[Claude Blocker] Offscreen document created for audio");
+    console.log("[Claude Blocker Advanced] Offscreen document created for audio");
     return true;
   } catch (error) {
-    console.error("[Claude Blocker] Failed to create offscreen document:", error);
+    console.error("[Claude Blocker Advanced] Failed to create offscreen document:", error);
     return false;
   }
 }
@@ -373,7 +373,7 @@ async function playSound(sound: SoundStyle, message?: string): Promise<void> {
   // Ensure offscreen document exists
   const ready = await ensureOffscreenDocument();
   if (!ready) {
-    console.error("[Claude Blocker] Cannot play sound - offscreen document not ready");
+    console.error("[Claude Blocker Advanced] Cannot play sound - offscreen document not ready");
     return;
   }
 
@@ -384,9 +384,9 @@ async function playSound(sound: SoundStyle, message?: string): Promise<void> {
       volume: soundConfig.volume,
       message,
     });
-    console.log("[Claude Blocker] Sound played:", sound);
+    console.log("[Claude Blocker Advanced] Sound played:", sound);
   } catch (error) {
-    console.error("[Claude Blocker] Failed to play sound:", error);
+    console.error("[Claude Blocker Advanced] Failed to play sound:", error);
   }
 }
 
@@ -395,7 +395,7 @@ let notificationCount = 0;
 
 // Send Chrome notification
 function sendNotification(title: string, message: string, notificationId?: string): void {
-  console.log("[Claude Blocker] sendNotification called:", {
+  console.log("[Claude Blocker Advanced] sendNotification called:", {
     title,
     message,
     notificationId,
@@ -404,11 +404,11 @@ function sendNotification(title: string, message: string, notificationId?: strin
   });
 
   if (!notificationConfig.enabled) {
-    console.log("[Claude Blocker] Notification skipped - notifications disabled");
+    console.log("[Claude Blocker Advanced] Notification skipped - notifications disabled");
     return;
   }
 
-  const id = notificationId ?? `claude-blocker-${Date.now()}`;
+  const id = notificationId ?? `claude-blocker-advanced-${Date.now()}`;
   chrome.notifications.create(id, {
     type: "basic",
     iconUrl: "icon-128.png",
@@ -418,17 +418,17 @@ function sendNotification(title: string, message: string, notificationId?: strin
     silent: soundConfig.enabled, // Silence Chrome's default sound when we play our own
   }, (createdId) => {
     if (chrome.runtime.lastError) {
-      console.error("[Claude Blocker] Notification failed:", chrome.runtime.lastError);
+      console.error("[Claude Blocker Advanced] Notification failed:", chrome.runtime.lastError);
     } else {
       notificationCount++;
-      console.log("[Claude Blocker] Notification created:", createdId, "Total count:", notificationCount);
+      console.log("[Claude Blocker Advanced] Notification created:", createdId, "Total count:", notificationCount);
     }
   });
 }
 
 // Check for session state changes and send notifications
 function checkForNotifications(newSessions: Session[]): void {
-  console.log("[Claude Blocker] checkForNotifications called:", {
+  console.log("[Claude Blocker Advanced] checkForNotifications called:", {
     enabled: notificationConfig.enabled,
     newSessionsCount: newSessions.length,
     prevSessionsCount: previousSessions.length,
@@ -437,7 +437,7 @@ function checkForNotifications(newSessions: Session[]): void {
   });
 
   if (!notificationConfig.enabled) {
-    console.log("[Claude Blocker] Notification check skipped - notifications disabled");
+    console.log("[Claude Blocker Advanced] Notification check skipped - notifications disabled");
     return;
   }
 
@@ -557,7 +557,7 @@ function connect() {
     websocket = new WebSocket(WS_URL);
 
     websocket.onopen = () => {
-      console.log("[Claude Blocker] Connected");
+      console.log("[Claude Blocker Advanced] Connected");
       state.serverConnected = true;
       wasConnected = true;
       retryCount = 0;
@@ -575,7 +575,7 @@ function connect() {
 
           // Update daily stats based on state changes
           updateDailyStats(newSessions, state.sessions).catch((err) => {
-            console.error("[Claude Blocker] Failed to update stats:", err);
+            console.error("[Claude Blocker Advanced] Failed to update stats:", err);
           });
 
           // Update previous sessions for next comparison
@@ -589,13 +589,13 @@ function connect() {
     };
 
     websocket.onclose = () => {
-      console.log("[Claude Blocker] Disconnected");
+      console.log("[Claude Blocker Advanced] Disconnected");
 
       // Send notification if we were previously connected
       if (wasConnected && notificationConfig.enabled && notificationConfig.onDisconnected) {
         sendNotification(
           "Server disconnected",
-          "Claude Blocker server is no longer reachable",
+          "Claude Blocker Advanced server is no longer reachable",
           "server-disconnected"
         );
       }
@@ -712,7 +712,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "TEST_NOTIFICATION") {
-    console.log("[Claude Blocker] Test notification requested");
+    console.log("[Claude Blocker Advanced] Test notification requested");
     // Temporarily enable notifications for the test
     const testId = `test-${Date.now()}`;
     chrome.notifications.create(testId, {
@@ -723,10 +723,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       priority: 2,
     }, (createdId) => {
       if (chrome.runtime.lastError) {
-        console.error("[Claude Blocker] Test notification failed:", chrome.runtime.lastError);
+        console.error("[Claude Blocker Advanced] Test notification failed:", chrome.runtime.lastError);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
-        console.log("[Claude Blocker] Test notification created:", createdId);
+        console.log("[Claude Blocker Advanced] Test notification created:", createdId);
         sendResponse({ success: true, notificationId: createdId });
       }
     });
@@ -747,7 +747,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "TEST_SOUND") {
-    console.log("[Claude Blocker] Test sound requested:", message.sound);
+    console.log("[Claude Blocker Advanced] Test sound requested:", message.sound);
     playSound(message.sound as SoundStyle, message.message)
       .then(() => {
         sendResponse({ success: true });

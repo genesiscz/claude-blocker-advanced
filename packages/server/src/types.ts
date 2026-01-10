@@ -5,13 +5,13 @@ export type {
   ServerMessage,
   ClientMessage,
   ToolCall,
-} from "@claude-blocker/shared";
+} from "@claude-blocker-advanced/shared";
 
 export {
   DEFAULT_PORT,
   SESSION_TIMEOUT_MS,
   USER_INPUT_TOOLS,
-} from "@claude-blocker/shared";
+} from "@claude-blocker-advanced/shared";
 
 // Internal tool call (with Date objects for easier manipulation)
 export interface InternalToolCall {

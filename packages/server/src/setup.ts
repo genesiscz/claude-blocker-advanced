@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { DEFAULT_PORT } from "@claude-blocker/shared";
+import { DEFAULT_PORT } from "@claude-blocker-advanced/shared";
 
 interface ClaudeSettings {
   hooks?: Record<string, unknown[]>;
@@ -108,24 +108,24 @@ export function setupHooks(): void {
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 
   console.log(`
-┌─────────────────────────────────────────────────┐
-│                                                 │
-│   Claude Blocker Setup Complete!                │
-│                                                 │
-│   Hooks configured in:                          │
+┌───────────────────────────────────────────────────────┐
+│                                                       │
+│   Claude Blocker Advanced Setup Complete!             │
+│                                                       │
+│   Hooks configured in:                                │
 │   ${settingsPath}
-│                                                 │
-│   Configured hooks:                             │
-│   - UserPromptSubmit (work starting)            │
-│   - PreToolUse (tool executing)                 │
-│   - PostToolUse (tool completed)                │
-│   - Stop (work finished)                        │
-│   - SessionStart (session began)                │
-│   - SessionEnd (session ended)                  │
-│                                                 │
-│   Next: Run 'npx claude-blocker' to start       │
-│                                                 │
-└─────────────────────────────────────────────────┘
+│                                                       │
+│   Configured hooks:                                   │
+│   - UserPromptSubmit (work starting)                  │
+│   - PreToolUse (tool executing)                       │
+│   - PostToolUse (tool completed)                      │
+│   - Stop (work finished)                              │
+│   - SessionStart (session began)                      │
+│   - SessionEnd (session ended)                        │
+│                                                       │
+│   Next: Run 'npx claude-blocker-advanced' to start    │
+│                                                       │
+└───────────────────────────────────────────────────────┘
 `);
 }
 
@@ -177,7 +177,7 @@ export function removeHooks(): void {
       }
 
       writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log("Claude Blocker hooks removed from settings.json");
+      console.log("Claude Blocker Advanced hooks removed from settings.json");
     } else {
       console.log("No hooks found in settings.json");
     }

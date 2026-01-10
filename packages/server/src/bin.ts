@@ -3,7 +3,7 @@
 import { createInterface } from "readline";
 import { startServer } from "./server.js";
 import { setupHooks, removeHooks, areHooksConfigured } from "./setup.js";
-import { DEFAULT_PORT } from "@claude-blocker/shared";
+import { DEFAULT_PORT } from "@claude-blocker-advanced/shared";
 
 const args = process.argv.slice(2);
 
@@ -23,10 +23,11 @@ function prompt(question: string): Promise<string> {
 
 function printHelp(): void {
   console.log(`
-Claude Blocker - Block distracting sites when Claude Code isn't working
+Claude Blocker Advanced - Block distracting sites when Claude Code isn't working
+(Fork of Theo's claude-blocker with advanced features)
 
 Usage:
-  npx claude-blocker [options]
+  npx claude-blocker-advanced [options]
 
 Options:
   --setup     Configure Claude Code hooks
@@ -35,8 +36,8 @@ Options:
   --help      Show this help message
 
 Examples:
-  npx claude-blocker            # Start the server (prompts for setup on first run)
-  npx claude-blocker --port 9000
+  npx claude-blocker-advanced            # Start the server (prompts for setup on first run)
+  npx claude-blocker-advanced --port 9000
 `);
 }
 
@@ -71,7 +72,7 @@ async function main(): Promise<void> {
 
   // Check if hooks are configured, prompt for setup if not
   if (!areHooksConfigured()) {
-    console.log("Claude Blocker hooks are not configured yet.\n");
+    console.log("Claude Blocker Advanced hooks are not configured yet.\n");
     const answer = await prompt("Would you like to set them up now? (Y/n) ");
     const normalized = answer.trim().toLowerCase();
 
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
       setupHooks();
       console.log(""); // Add spacing before server start
     } else {
-      console.log("\nSkipping setup. You can run 'npx claude-blocker --setup' later.\n");
+      console.log("\nSkipping setup. You can run 'npx claude-blocker-advanced --setup' later.\n");
     }
   }
 

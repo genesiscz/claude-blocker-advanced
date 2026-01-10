@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
 const keyPath = path.join(rootDir, "key.pem");
 const distPath = path.join(rootDir, "dist");
-const outputPath = path.join(rootDir, "claude-blocker.crx");
+const outputPath = path.join(rootDir, "claude-blocker-advanced.crx");
 
 if (!fs.existsSync(keyPath)) {
   console.error("Error: key.pem not found!");

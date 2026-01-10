@@ -613,7 +613,7 @@ function renderState(state: PublicState): void {
     message.textContent = "Server offline. Start the blocker server to continue.";
     setDotColor(dot, "red");
     status.textContent = "Server Offline";
-    hint.innerHTML = `Run <span style="background:#2a2a2a;padding:2px 8px;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;">npx claude-blocker</span> to start`;
+    hint.innerHTML = `Run <span style="background:#2a2a2a;padding:2px 8px;border-radius:4px;font-family:ui-monospace,monospace;font-size:12px;">npx claude-blocker-advanced</span> to start`;
   } else if (state.sessionCount === 0) {
     message.textContent = "No Claude Code sessions detected.";
     setDotColor(dot, "green");

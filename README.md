@@ -1,4 +1,6 @@
-# Claude Blocker
+# Claude Blocker Advanced
+
+> **Fork Notice**: This is a fork of [Theo's Claude Blocker](https://github.com/T3-Content/claude-blocker) with advanced features and improvements.
 
 Block distracting websites unless [Claude Code](https://claude.ai/claude-code) is actively running inference.
 
@@ -27,7 +29,7 @@ Block distracting websites unless [Claude Code](https://claude.ai/claude-code) i
 ### 1. Install the server
 
 ```bash
-npx claude-blocker --setup
+npx claude-blocker-advanced --setup
 ```
 
 This installs the Claude Code hooks and starts the server. The hooks are configured in `~/.claude/settings.json`.
@@ -47,16 +49,16 @@ Default blocked sites: `x.com`, `youtube.com`
 
 ```bash
 # Start with auto-setup (recommended for first run)
-npx claude-blocker --setup
+npx claude-blocker-advanced --setup
 
 # Start on custom port
-npx claude-blocker --port 9000
+npx claude-blocker-advanced --port 9000
 
 # Remove hooks from Claude Code settings
-npx claude-blocker --remove
+npx claude-blocker-advanced --remove
 
 # Show help
-npx claude-blocker --help
+npx claude-blocker-advanced --help
 ```
 
 ## Features
@@ -67,6 +69,10 @@ npx claude-blocker --help
 - **Emergency bypass** — 5-minute bypass, once per day
 - **Configurable sites** — Add/remove sites from extension settings
 - **Works offline** — Blocks everything when server isn't running (safety default)
+- **Session monitoring dashboard** — Rich session info with timeline view
+- **Desktop notifications** — Get notified when Claude needs input
+- **Sound alerts** — Configurable audio notifications
+- **Quick actions** — Open project in terminal, editor, or Finder
 
 ## Requirements
 
@@ -78,7 +84,7 @@ npx claude-blocker --help
 
 ```bash
 # Clone and install
-git clone https://github.com/t3-content/claude-blocker.git
+git clone https://github.com/genesiscz/claude-blocker.git
 cd claude-blocker
 pnpm install
 
@@ -93,7 +99,7 @@ pnpm dev
 
 ```
 packages/
-├── server/      # Node.js server + CLI (published to npm)
+├── server/      # Node.js server + CLI (published to npm as claude-blocker-advanced)
 ├── extension/   # Chrome extension (Manifest V3)
 └── shared/      # Shared TypeScript types
 ```
@@ -106,6 +112,10 @@ packages/
 
 See [PRIVACY.md](PRIVACY.md) for full privacy policy.
 
+## Credits
+
+This project is a fork of [claude-blocker](https://github.com/T3-Content/claude-blocker) by [Theo Browne](https://github.com/t3dotgg).
+
 ## License
 
-MIT © [Theo Browne](https://github.com/t3dotgg)
+MIT
