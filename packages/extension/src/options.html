@@ -44,6 +44,7 @@
           History
           <span class="tab-badge" id="history-badge">0</span>
         </button>
+        <button class="tab-btn" data-tab="stats">Stats</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="about">About</button>
       </nav>
@@ -130,6 +131,97 @@
             </div>
             <div class="history-list" id="history-list">
               <div class="no-history">No session history yet</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Stats Tab -->
+        <div class="tab-content" id="tab-stats">
+          <!-- Today's Overview -->
+          <section class="stats-overview-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Today's Productivity</h2>
+                <p class="section-desc" id="stats-date">Loading...</p>
+              </div>
+            </div>
+
+            <div class="stats-hero">
+              <div class="stats-ring-container">
+                <svg class="stats-ring" viewBox="0 0 120 120">
+                  <circle class="stats-ring-bg" cx="60" cy="60" r="52" />
+                  <circle class="stats-ring-idle" cx="60" cy="60" r="52" id="ring-idle" />
+                  <circle class="stats-ring-waiting" cx="60" cy="60" r="52" id="ring-waiting" />
+                  <circle class="stats-ring-working" cx="60" cy="60" r="52" id="ring-working" />
+                </svg>
+                <div class="stats-ring-center">
+                  <span class="stats-ring-value" id="stats-total-time">0h 0m</span>
+                  <span class="stats-ring-label">Total</span>
+                </div>
+              </div>
+
+              <div class="stats-breakdown">
+                <div class="stats-breakdown-item working">
+                  <div class="stats-breakdown-dot"></div>
+                  <div class="stats-breakdown-info">
+                    <span class="stats-breakdown-label">Working</span>
+                    <span class="stats-breakdown-value" id="stats-working-time">0h 0m</span>
+                  </div>
+                  <span class="stats-breakdown-pct" id="stats-working-pct">0%</span>
+                </div>
+                <div class="stats-breakdown-item waiting">
+                  <div class="stats-breakdown-dot"></div>
+                  <div class="stats-breakdown-info">
+                    <span class="stats-breakdown-label">Waiting</span>
+                    <span class="stats-breakdown-value" id="stats-waiting-time">0h 0m</span>
+                  </div>
+                  <span class="stats-breakdown-pct" id="stats-waiting-pct">0%</span>
+                </div>
+                <div class="stats-breakdown-item idle">
+                  <div class="stats-breakdown-dot"></div>
+                  <div class="stats-breakdown-info">
+                    <span class="stats-breakdown-label">Idle</span>
+                    <span class="stats-breakdown-value" id="stats-idle-time">0h 0m</span>
+                  </div>
+                  <span class="stats-breakdown-pct" id="stats-idle-pct">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats-counts">
+              <div class="stats-count-card">
+                <span class="stats-count-value" id="stats-sessions-started">0</span>
+                <span class="stats-count-label">Sessions Started</span>
+              </div>
+              <div class="stats-count-card">
+                <span class="stats-count-value" id="stats-sessions-ended">0</span>
+                <span class="stats-count-label">Sessions Ended</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Weekly Chart -->
+          <section class="stats-weekly-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Last 7 Days</h2>
+                <p class="section-desc">Daily Claude usage patterns</p>
+              </div>
+            </div>
+
+            <div class="stats-chart-container">
+              <div class="stats-chart" id="stats-weekly-chart">
+                <!-- Bars will be rendered by JS -->
+              </div>
+              <div class="stats-chart-labels" id="stats-chart-labels">
+                <!-- Labels will be rendered by JS -->
+              </div>
+            </div>
+
+            <div class="stats-chart-legend">
+              <span class="stats-legend-item"><span class="stats-legend-dot working"></span>Working</span>
+              <span class="stats-legend-item"><span class="stats-legend-dot waiting"></span>Waiting</span>
+              <span class="stats-legend-item"><span class="stats-legend-dot idle"></span>Idle</span>
             </div>
           </section>
         </div>

@@ -119,6 +119,16 @@ interface SessionActivity {
 type SortMode = "status" | "project" | "activity" | "uptime";
 type HistoryFilter = "all" | "today" | "yesterday" | "week";
 
+// Productivity stats interface
+interface DailyStats {
+  date: string; // YYYY-MM-DD
+  totalWorkingMs: number;
+  totalWaitingMs: number;
+  totalIdleMs: number;
+  sessionsStarted: number;
+  sessionsEnded: number;
+}
+
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   enabled: true,
   scope: "all",
@@ -224,6 +234,23 @@ const tabContents = document.querySelectorAll(".tab-content") as NodeListOf<HTML
 
 // Toast container
 const toastContainer = document.getElementById("toast-container") as HTMLElement;
+
+// Stats elements
+const statsDate = document.getElementById("stats-date") as HTMLElement;
+const statsTotalTime = document.getElementById("stats-total-time") as HTMLElement;
+const statsWorkingTime = document.getElementById("stats-working-time") as HTMLElement;
+const statsWaitingTime = document.getElementById("stats-waiting-time") as HTMLElement;
+const statsIdleTime = document.getElementById("stats-idle-time") as HTMLElement;
+const statsWorkingPct = document.getElementById("stats-working-pct") as HTMLElement;
+const statsWaitingPct = document.getElementById("stats-waiting-pct") as HTMLElement;
+const statsIdlePct = document.getElementById("stats-idle-pct") as HTMLElement;
+const statsSessionsStarted = document.getElementById("stats-sessions-started") as HTMLElement;
+const statsSessionsEnded = document.getElementById("stats-sessions-ended") as HTMLElement;
+const ringWorking = document.getElementById("ring-working") as SVGCircleElement;
+const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
+const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
+const statsWeeklyChart = document.getElementById("stats-weekly-chart") as HTMLElement;
+const statsChartLabels = document.getElementById("stats-chart-labels") as HTMLElement;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -331,6 +358,217 @@ function formatToolRelativeTime(ms: number): string {
   if (hours > 0) return `-${hours}h`;
   if (minutes > 0) return `-${minutes}m`;
   return `-${seconds}s`;
+}
+
+// Format duration for stats display (more detailed)
+function formatStatsDuration(ms: number): string {
+  if (ms <= 0) return "0m";
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${remainingMinutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+  return `${seconds}s`;
+}
+
+// Get date key in YYYY-MM-DD format
+function getDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Get last N days as date keys
+function getLastNDays(n: number): string[] {
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(getDateKey(date));
+  }
+  return dates;
+}
+
+// Format date for display (e.g., "Friday, Jan 10")
+function formatStatsDate(dateKey: string): string {
+  const date = new Date(dateKey + "T00:00:00");
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayName = dayNames[date.getDay()];
+  const monthName = monthNames[date.getMonth()];
+  const dayNum = date.getDate();
+  return `${dayName}, ${monthName} ${dayNum}`;
+}
+
+// Get short day name for chart labels
+function getShortDayName(dateKey: string): string {
+  const date = new Date(dateKey + "T00:00:00");
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return dayNames[date.getDay()];
+}
+
+// Load stats for multiple dates from service worker
+async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_STATS_RANGE", dates }, (response) => {
+      if (response?.success && Array.isArray(response.stats)) {
+        resolve(response.stats);
+      } else {
+        // Return empty stats for each date
+        resolve(dates.map(date => ({
+          date,
+          totalWorkingMs: 0,
+          totalWaitingMs: 0,
+          totalIdleMs: 0,
+          sessionsStarted: 0,
+          sessionsEnded: 0,
+        })));
+      }
+    });
+  });
+}
+
+// Ring chart constants
+const RING_CIRCUMFERENCE = 2 * Math.PI * 52; // 2πr where r=52
+
+// Render the ring chart
+function renderRingChart(stats: DailyStats): void {
+  const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
+
+  // Update total time
+  statsTotalTime.textContent = formatStatsDuration(total);
+
+  // Update individual times
+  statsWorkingTime.textContent = formatStatsDuration(stats.totalWorkingMs);
+  statsWaitingTime.textContent = formatStatsDuration(stats.totalWaitingMs);
+  statsIdleTime.textContent = formatStatsDuration(stats.totalIdleMs);
+
+  // Calculate percentages
+  const workingPct = total > 0 ? Math.round((stats.totalWorkingMs / total) * 100) : 0;
+  const waitingPct = total > 0 ? Math.round((stats.totalWaitingMs / total) * 100) : 0;
+  const idlePct = total > 0 ? Math.round((stats.totalIdleMs / total) * 100) : 0;
+
+  statsWorkingPct.textContent = `${workingPct}%`;
+  statsWaitingPct.textContent = `${waitingPct}%`;
+  statsIdlePct.textContent = `${idlePct}%`;
+
+  // Update session counts
+  statsSessionsStarted.textContent = String(stats.sessionsStarted);
+  statsSessionsEnded.textContent = String(stats.sessionsEnded);
+
+  // Update ring chart segments
+  // The ring is drawn starting from the top (after -90deg rotation in CSS)
+  // We need to draw segments in order: working (on top), waiting, idle (on bottom)
+  if (total === 0) {
+    // No data - show empty ring
+    ringWorking.style.strokeDasharray = `0 ${RING_CIRCUMFERENCE}`;
+    ringWaiting.style.strokeDasharray = `0 ${RING_CIRCUMFERENCE}`;
+    ringIdle.style.strokeDasharray = `0 ${RING_CIRCUMFERENCE}`;
+    return;
+  }
+
+  const workingLen = (stats.totalWorkingMs / total) * RING_CIRCUMFERENCE;
+  const waitingLen = (stats.totalWaitingMs / total) * RING_CIRCUMFERENCE;
+  const idleLen = (stats.totalIdleMs / total) * RING_CIRCUMFERENCE;
+
+  // For stacked segments, we use stroke-dashoffset to position them
+  // Working: starts at 0
+  ringWorking.style.strokeDasharray = `${workingLen} ${RING_CIRCUMFERENCE}`;
+  ringWorking.style.strokeDashoffset = "0";
+
+  // Waiting: starts after working
+  ringWaiting.style.strokeDasharray = `${waitingLen} ${RING_CIRCUMFERENCE}`;
+  ringWaiting.style.strokeDashoffset = String(-workingLen);
+
+  // Idle: starts after working + waiting
+  ringIdle.style.strokeDasharray = `${idleLen} ${RING_CIRCUMFERENCE}`;
+  ringIdle.style.strokeDashoffset = String(-(workingLen + waitingLen));
+}
+
+// Render the weekly chart
+function renderWeeklyChart(statsArray: DailyStats[]): void {
+  // Find max total for scaling
+  let maxTotal = 0;
+  for (const stats of statsArray) {
+    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
+    if (total > maxTotal) maxTotal = total;
+  }
+
+  // If no data, show at least some height
+  if (maxTotal === 0) maxTotal = 1;
+
+  const today = getDateKey(new Date());
+
+  // Generate bars HTML
+  const barsHtml = statsArray.map((stats) => {
+    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
+    const totalPct = (total / maxTotal) * 100;
+
+    // Calculate segment heights relative to bar height
+    const workingPct = total > 0 ? (stats.totalWorkingMs / total) * totalPct : 0;
+    const waitingPct = total > 0 ? (stats.totalWaitingMs / total) * totalPct : 0;
+    const idlePct = total > 0 ? (stats.totalIdleMs / total) * totalPct : 0;
+
+    const tooltipText = total > 0
+      ? `${formatStatsDuration(total)} total`
+      : "No data";
+
+    return `
+      <div class="stats-chart-bar">
+        <div class="stats-bar-tooltip">${tooltipText}</div>
+        <div class="stats-bar-segment idle" style="height: ${idlePct}%"></div>
+        <div class="stats-bar-segment waiting" style="height: ${waitingPct}%"></div>
+        <div class="stats-bar-segment working" style="height: ${workingPct}%"></div>
+      </div>
+    `;
+  }).join("");
+
+  statsWeeklyChart.innerHTML = barsHtml;
+
+  // Generate labels HTML
+  const labelsHtml = statsArray.map((stats) => {
+    const isToday = stats.date === today;
+    const label = getShortDayName(stats.date);
+    return `<span class="stats-chart-label ${isToday ? "today" : ""}">${label}</span>`;
+  }).join("");
+
+  statsChartLabels.innerHTML = labelsHtml;
+}
+
+// Refresh stats display
+async function refreshStats(): Promise<void> {
+  const dates = getLastNDays(7);
+  const today = dates[dates.length - 1];
+
+  // Update date display
+  statsDate.textContent = formatStatsDate(today);
+
+  // Load all stats
+  const statsArray = await loadStatsRange(dates);
+
+  // Find today's stats
+  const todayStats = statsArray.find(s => s.date === today) ?? {
+    date: today,
+    totalWorkingMs: 0,
+    totalWaitingMs: 0,
+    totalIdleMs: 0,
+    sessionsStarted: 0,
+    sessionsEnded: 0,
+  };
+
+  // Render today's stats
+  renderRingChart(todayStats);
+
+  // Render weekly chart
+  renderWeeklyChart(statsArray);
 }
 
 // Format tool detail info (more verbose for vertical layout)
@@ -1611,6 +1849,11 @@ function switchTab(tabName: string): void {
   if (tabName === "history") {
     refreshHistory();
   }
+
+  // Refresh stats when switching to stats tab
+  if (tabName === "stats") {
+    refreshStats();
+  }
 }
 
 // Event listeners
@@ -1789,6 +2032,7 @@ async function init(): Promise<void> {
   updateNotificationDebugInfo(); // Load notification debug info
   renderTimelineAxis(); // Initialize timeline axis
   renderHistory(); // Initialize history list
+  refreshStats(); // Initialize productivity stats
   refreshState();
 }
 
