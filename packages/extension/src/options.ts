@@ -148,6 +148,10 @@ interface DailyStats {
   totalIdleMs: number;
   sessionsStarted: number;
   sessionsEnded: number;
+  // Token and cost tracking
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
 }
 
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
@@ -272,6 +276,10 @@ const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
 const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
 const statsWeeklyChart = document.getElementById("stats-weekly-chart") as HTMLElement;
 const statsChartLabels = document.getElementById("stats-chart-labels") as HTMLElement;
+const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
+const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
+const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
+const statsCost = document.getElementById("stats-cost") as HTMLElement;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -451,6 +459,9 @@ async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
           totalIdleMs: 0,
           sessionsStarted: 0,
           sessionsEnded: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          totalCostUsd: 0,
         })));
       }
     });
@@ -484,6 +495,13 @@ function renderRingChart(stats: DailyStats): void {
   // Update session counts
   statsSessionsStarted.textContent = String(stats.sessionsStarted);
   statsSessionsEnded.textContent = String(stats.sessionsEnded);
+
+  // Update token and cost display
+  const totalTokens = stats.totalInputTokens + stats.totalOutputTokens;
+  statsTokens.textContent = formatTokens(totalTokens);
+  statsInputTokens.textContent = formatTokens(stats.totalInputTokens);
+  statsOutputTokens.textContent = formatTokens(stats.totalOutputTokens);
+  statsCost.textContent = formatCost(stats.totalCostUsd);
 
   // Update ring chart segments
   // The ring is drawn starting from the top (after -90deg rotation in CSS)
@@ -1137,6 +1155,7 @@ function renderTimeline(sessions: Session[]): void {
       <div class="timeline-track">
         <div class="timeline-track-label">
           <span class="track-project">${activity.projectName}</span>
+          <span class="track-session" title="${activity.sessionId}">${activity.sessionId.substring(0, 8)}</span>
           <span class="track-duration">${formatDuration(totalDuration)}</span>
         </div>
         <div class="timeline-bar">

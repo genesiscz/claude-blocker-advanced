@@ -407,6 +407,29 @@ class SessionState {
     };
   }
 
+  // Update session metrics from statusline (tokens and cost)
+  // Note: statusline provides absolute totals, not deltas, so we set rather than accumulate
+  updateSessionMetrics(
+    sessionId: string,
+    metrics: {
+      costUsd: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    }
+  ): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.costUsd = metrics.costUsd;
+    session.inputTokens = metrics.inputTokens;
+    session.outputTokens = metrics.outputTokens;
+    session.totalTokens = metrics.totalTokens;
+    session.lastActivity = new Date();
+
+    this.broadcast();
+  }
+
   destroy(): void {
     // Save any pending changes immediately
     if (this.saveDebounceTimer) {

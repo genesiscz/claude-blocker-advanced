@@ -65,6 +65,40 @@ export function startServer(port: number = DEFAULT_PORT): void {
       return;
     }
 
+    // Statusline endpoint - receives token and cost data from statusline script
+    if (req.method === "POST" && url.pathname === "/statusline") {
+      try {
+        const body = await parseBody(req);
+        const payload = JSON.parse(body) as Record<string, unknown>;
+
+        const sessionId = payload.session_id as string | undefined;
+        if (!sessionId) {
+          sendJson(res, { error: "session_id required" }, 400);
+          return;
+        }
+
+        // Extract metrics from statusline payload
+        const cost = payload.cost as Record<string, unknown> | undefined;
+        const contextWindow = payload.context_window as Record<string, unknown> | undefined;
+
+        const costUsd = (cost?.total_cost_usd as number) || 0;
+        const inputTokens = (contextWindow?.total_input_tokens as number) || 0;
+        const outputTokens = (contextWindow?.total_output_tokens as number) || 0;
+
+        state.updateSessionMetrics(sessionId, {
+          costUsd,
+          inputTokens,
+          outputTokens,
+          totalTokens: inputTokens + outputTokens,
+        });
+
+        sendJson(res, { ok: true });
+      } catch {
+        sendJson(res, { error: "Invalid JSON" }, 400);
+      }
+      return;
+    }
+
     // Action: Open in Finder (macOS)
     if (req.method === "POST" && url.pathname === "/action/open-finder") {
       try {

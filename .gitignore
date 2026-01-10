@@ -31,3 +31,4 @@ coverage/
 # Misc
 *.local
 bun.lock
+key.pem
