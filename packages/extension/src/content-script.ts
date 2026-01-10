@@ -352,11 +352,6 @@ function createOverlay(): void {
       .action-btn:hover svg { stroke: #fff; }
       .action-btn[data-tooltip]::before { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 5px 8px; background: #252525; border: 1px solid #444; border-radius: 5px; font-size: 10px; font-weight: 500; color: #aaa; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; margin-bottom: 5px; z-index: 1000; font-family: Arial, Helvetica, sans-serif; }
       .action-btn:hover[data-tooltip]::before { opacity: 1; }
-      .overlay-toast { position: fixed; bottom: 80px; right: 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #fff; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.2s ease; z-index: 2147483647; font-family: Arial, Helvetica, sans-serif; }
-      .overlay-toast.toast-out { animation: toast-out 0.2s ease forwards; }
-      .overlay-toast svg { width: 14px; height: 14px; stroke: #30d158; stroke-width: 2; fill: none; flex-shrink: 0; }
-      @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-      @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
     </style>
     <div class="overlay">
       <div class="pill-wrapper">
@@ -376,29 +371,39 @@ function removeOverlay(): void {
   getOverlay()?.remove();
 }
 
-// Show a toast notification in the overlay
+const OVERLAY_TOAST_ID = "claude-blocker-overlay-toast";
+
+// Show a toast notification (separate shadow DOM for reliability)
 function showOverlayToast(message: string): void {
-  const shadow = getOverlay()?.shadowRoot;
-  if (!shadow) return;
-
   // Remove any existing toast
-  const existingToast = shadow.querySelector(".overlay-toast");
-  if (existingToast) {
-    existingToast.remove();
-  }
+  document.getElementById(OVERLAY_TOAST_ID)?.remove();
 
-  const toast = document.createElement("div");
-  toast.className = "overlay-toast";
-  toast.innerHTML = `
-    <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-    <span>${message}</span>
+  const container = document.createElement("div");
+  container.id = OVERLAY_TOAST_ID;
+  const shadow = container.attachShadow({ mode: "open" });
+
+  shadow.innerHTML = `
+    <style>
+      .toast { all: initial; position: fixed; bottom: 80px; right: 20px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #fff; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.2s ease; z-index: 2147483647; font-family: Arial, Helvetica, sans-serif; }
+      .toast.out { animation: toast-out 0.2s ease forwards; }
+      .toast svg { width: 14px; height: 14px; stroke: #30d158; stroke-width: 2; fill: none; flex-shrink: 0; }
+      @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+    </style>
+    <div class="toast">
+      <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+      <span>${message}</span>
+    </div>
   `;
 
-  shadow.appendChild(toast);
+  document.documentElement.appendChild(container);
 
   setTimeout(() => {
-    toast.classList.add("toast-out");
-    setTimeout(() => toast.remove(), 200);
+    const toastEl = shadow.querySelector(".toast");
+    if (toastEl) {
+      toastEl.classList.add("out");
+      setTimeout(() => container.remove(), 200);
+    }
   }, 2000);
 }
 
