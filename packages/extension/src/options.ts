@@ -1009,6 +1009,28 @@ function renderTimeline(sessions: Session[]): void {
   // Get activities to render (active sessions + recently ended)
   const now = Date.now();
   const cutoff = now - TIMELINE_MS;
+
+  // Merge history sessions into timeline (for sessions that ended within the window)
+  for (const hist of sessionHistory) {
+    const endTimeMs = new Date(hist.endTime).getTime();
+    const startTimeMs = new Date(hist.startTime).getTime();
+
+    // Skip if already tracked or outside timeline window
+    if (sessionActivities.has(hist.id)) continue;
+    if (endTimeMs < cutoff) continue;
+
+    // Add historical session as a completed segment
+    sessionActivities.set(hist.id, {
+      sessionId: hist.id,
+      projectName: hist.projectName,
+      segments: [{
+        status: "idle", // Completed sessions show as idle/gray
+        startTime: Math.max(startTimeMs, cutoff),
+        endTime: endTimeMs,
+      }]
+    });
+  }
+
   const activitiesToRender: SessionActivity[] = [];
 
   for (const activity of sessionActivities.values()) {
@@ -1024,11 +1046,16 @@ function renderTimeline(sessions: Session[]): void {
     return;
   }
 
-  // Sort by project name
-  activitiesToRender.sort((a, b) => a.projectName.localeCompare(b.projectName));
+  // Sort by most recent activity (descending) and limit to 10
+  activitiesToRender.sort((a, b) => {
+    const aLast = a.segments[a.segments.length - 1]?.endTime ?? 0;
+    const bLast = b.segments[b.segments.length - 1]?.endTime ?? 0;
+    return bLast - aLast;
+  });
+  const limitedActivities = activitiesToRender.slice(0, 10);
 
   // Render tracks
-  timelineTracks.innerHTML = activitiesToRender.map(activity => {
+  timelineTracks.innerHTML = limitedActivities.map(activity => {
     // Calculate total duration
     const totalDuration = activity.segments.reduce((sum, seg) => {
       const segStart = Math.max(seg.startTime, cutoff);
