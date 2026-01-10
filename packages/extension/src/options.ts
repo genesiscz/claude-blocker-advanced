@@ -293,6 +293,7 @@ let currentSortMode: SortMode = "status";
 let lastSortMode: SortMode = "status"; // Track previous sort mode for change detection
 let currentHistoryFilter: HistoryFilter = "all";
 let sessionHistory: HistoricalSession[] = [];
+let currentStatsDate: string = ""; // Will be set to today on init
 
 // Activity tracking - maps session ID to activity history
 const sessionActivities: Map<string, SessionActivity> = new Map();
@@ -414,10 +415,10 @@ function getDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Get last N days as date keys
-function getLastNDays(n: number): string[] {
+// Get last N days as date keys (centered on baseDate if provided)
+function getLastNDays(n: number, baseDate?: Date): string[] {
   const dates: string[] = [];
-  const today = new Date();
+  const today = baseDate ? new Date(baseDate) : new Date();
   for (let i = n - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
@@ -466,6 +467,43 @@ async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
       }
     });
   });
+}
+
+// Project statistics for a given date
+interface ProjectStats {
+  projectName: string;
+  sessionCount: number;
+  totalDuration: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+// Get project stats for a specific date
+function getProjectStatsForDate(date: string, history: HistoricalSession[]): ProjectStats[] {
+  const projectMap = new Map<string, ProjectStats>();
+
+  for (const session of history) {
+    const sessionDate = session.endTime.substring(0, 10); // YYYY-MM-DD
+    if (sessionDate !== date) continue;
+
+    const project = projectMap.get(session.projectName) || {
+      projectName: session.projectName,
+      sessionCount: 0,
+      totalDuration: 0,
+      totalTokens: 0,
+      totalCost: 0,
+    };
+
+    project.sessionCount++;
+    project.totalDuration += session.totalDurationMs;
+    project.totalTokens += session.totalTokens;
+    project.totalCost += session.costUsd;
+
+    projectMap.set(session.projectName, project);
+  }
+
+  // Sort by total duration (descending - most active first)
+  return Array.from(projectMap.values()).sort((a, b) => b.totalDuration - a.totalDuration);
 }
 
 // Ring chart constants
@@ -582,32 +620,86 @@ function renderWeeklyChart(statsArray: DailyStats[]): void {
   statsChartLabels.innerHTML = labelsHtml;
 }
 
+// Render project breakdown for selected date
+function renderProjectBreakdown(projects: ProjectStats[]): void {
+  const listEl = document.getElementById("stats-project-list") as HTMLElement;
+
+  if (projects.length === 0) {
+    listEl.innerHTML = '<div class="no-projects">No sessions on this date</div>';
+    return;
+  }
+
+  listEl.innerHTML = projects.map(p => `
+    <div class="project-stats-row">
+      <div class="project-stats-header">
+        <span class="project-name">${p.projectName}</span>
+        <span class="project-sessions">${p.sessionCount} session${p.sessionCount === 1 ? '' : 's'}</span>
+      </div>
+      <div class="project-stats-metrics">
+        <span class="project-metric">
+          <span class="metric-label">Duration:</span>
+          <span class="metric-value">${formatDuration(p.totalDuration)}</span>
+        </span>
+        <span class="project-metric">
+          <span class="metric-label">Tokens:</span>
+          <span class="metric-value">${formatTokens(p.totalTokens)}</span>
+        </span>
+        ${p.totalCost > 0 ? `
+        <span class="project-metric">
+          <span class="metric-label">Cost:</span>
+          <span class="metric-value">${formatCost(p.totalCost)}</span>
+        </span>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// Update date picker display
+function updateDatePicker(): void {
+  const datePicker = document.getElementById("stats-date-picker") as HTMLInputElement;
+  datePicker.value = currentStatsDate;
+}
+
 // Refresh stats display
 async function refreshStats(): Promise<void> {
-  const dates = getLastNDays(7);
-  const today = dates[dates.length - 1];
+  if (!currentStatsDate) {
+    currentStatsDate = getDateKey(new Date());
+  }
+
+  // Get 7 days centered on currentStatsDate
+  const dates = getLastNDays(7, new Date(currentStatsDate));
+  const selectedDate = currentStatsDate;
 
   // Update date display
-  statsDate.textContent = formatStatsDate(today);
+  statsDate.textContent = formatStatsDate(selectedDate);
+  updateDatePicker();
 
   // Load all stats
   const statsArray = await loadStatsRange(dates);
 
-  // Find today's stats
-  const todayStats = statsArray.find(s => s.date === today) ?? {
-    date: today,
+  // Find selected date's stats
+  const selectedStats = statsArray.find(s => s.date === selectedDate) ?? {
+    date: selectedDate,
     totalWorkingMs: 0,
     totalWaitingMs: 0,
     totalIdleMs: 0,
     sessionsStarted: 0,
     sessionsEnded: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCostUsd: 0,
   };
 
-  // Render today's stats
-  renderRingChart(todayStats);
+  // Render selected date's stats
+  renderRingChart(selectedStats);
 
   // Render weekly chart
   renderWeeklyChart(statsArray);
+
+  // Render project breakdown for selected date
+  const projectStats = getProjectStatsForDate(selectedDate, sessionHistory);
+  renderProjectBreakdown(projectStats);
 }
 
 // Format tool detail info (more verbose for vertical layout)
@@ -1999,6 +2091,32 @@ tabButtons.forEach(btn => {
       switchTab(tabName);
     }
   });
+});
+
+// Stats date picker event listeners
+document.getElementById("stats-prev-day")?.addEventListener("click", () => {
+  const date = new Date(currentStatsDate);
+  date.setDate(date.getDate() - 1);
+  currentStatsDate = getDateKey(date);
+  refreshStats();
+});
+
+document.getElementById("stats-next-day")?.addEventListener("click", () => {
+  const date = new Date(currentStatsDate);
+  date.setDate(date.getDate() + 1);
+  currentStatsDate = getDateKey(date);
+  refreshStats();
+});
+
+document.getElementById("stats-date-picker")?.addEventListener("change", (e) => {
+  const target = e.target as HTMLInputElement;
+  currentStatsDate = target.value;
+  refreshStats();
+});
+
+document.getElementById("stats-today-btn")?.addEventListener("click", () => {
+  currentStatsDate = getDateKey(new Date());
+  refreshStats();
 });
 
 // Session sort event listener

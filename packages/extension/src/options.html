@@ -144,6 +144,12 @@
                 <h2>Today's Productivity</h2>
                 <p class="section-desc" id="stats-date">Loading...</p>
               </div>
+              <div class="stats-date-controls">
+                <button class="stats-nav-btn" id="stats-prev-day" title="Previous day">‹</button>
+                <input type="date" id="stats-date-picker" class="stats-date-input" />
+                <button class="stats-nav-btn" id="stats-next-day" title="Next day">›</button>
+                <button class="stats-today-btn" id="stats-today-btn">Today</button>
+              </div>
             </div>
 
             <div class="stats-hero">
@@ -236,6 +242,20 @@
               <span class="stats-legend-item"><span class="stats-legend-dot working"></span>Working</span>
               <span class="stats-legend-item"><span class="stats-legend-dot waiting"></span>Waiting</span>
               <span class="stats-legend-item"><span class="stats-legend-dot idle"></span>Idle</span>
+            </div>
+          </section>
+
+          <!-- Project Breakdown -->
+          <section class="stats-projects-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>By Project</h2>
+                <p class="section-desc">Usage breakdown by project</p>
+              </div>
+            </div>
+
+            <div class="stats-project-list" id="stats-project-list">
+              <!-- Populated by JS -->
             </div>
           </section>
         </div>
