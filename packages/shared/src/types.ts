@@ -10,6 +10,22 @@ export interface ToolCall {
   };
 }
 
+// Token breakdown for detailed cost tracking
+export interface TokenBreakdown {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+// Model pricing structure (all values in dollars per token)
+export interface ModelPricing {
+  input: number; // Cost per input token
+  output: number; // Cost per output token
+  cacheCreate: number; // Cost per cache creation token
+  cacheRead: number; // Cost per cache read token
+}
+
 // Hook event payload (from Claude Code)
 export interface HookPayload {
   session_id: string;
@@ -19,7 +35,9 @@ export interface HookPayload {
     | "PostToolUse"
     | "Stop"
     | "SessionStart"
-    | "SessionEnd";
+    | "SessionEnd"
+    | "SubagentStart"
+    | "SubagentStop";
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   cwd?: string;
@@ -30,6 +48,10 @@ export interface HookPayload {
   total_tokens?: number;
   // Cost tracking (if provided)
   cost_usd?: number;
+  // Subagent-specific fields
+  agent_id?: string; // For SubagentStart and SubagentStop
+  agent_type?: string; // For SubagentStart (e.g., "Explore", "Plan")
+  agent_transcript_path?: string; // For SubagentStop - path to subagent's transcript
 }
 
 // Session state tracked by server
@@ -45,11 +67,16 @@ export interface Session {
   toolCount: number;
   recentTools: ToolCall[]; // Last 5 tool calls
   waitingForInputSince?: string; // ISO string for JSON serialization
-  // Token tracking
+  // Token tracking (detailed breakdown)
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Model tracking
+  model?: string; // Primary model used (e.g., "claude-opus-4-5-20251101")
+  modelBreakdown?: Record<string, TokenBreakdown>; // Per-model token usage
 }
 
 // WebSocket messages from server to extension
@@ -61,7 +88,16 @@ export type ServerMessage =
       working: number;
       waitingForInput: number;
     }
-  | { type: "pong" };
+  | { type: "pong" }
+  | {
+      type: "stats_update";
+      dailyStats: DailyStats;
+      backfillProgress?: {
+        totalFiles: number;
+        processedFiles: number;
+        status: "scanning" | "processing" | "complete" | "error";
+      };
+    };
 
 // WebSocket messages from extension to server
 export type ClientMessage = { type: "ping" } | { type: "subscribe" };
@@ -204,9 +240,16 @@ export interface HistoricalSession {
   }>;
   // Recent tool calls (up to 5)
   recentTools?: ToolCall[];
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
   totalTokens?: number;
   costUsd?: number;
+  // Model tracking
+  model?: string; // Primary model used
+  modelBreakdown?: Record<string, TokenBreakdown>; // Per-model token usage
 }
 
 // Daily productivity stats
@@ -217,10 +260,14 @@ export interface DailyStats {
   totalIdleMs: number;
   sessionsStarted: number;
   sessionsEnded: number;
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   totalCostUsd: number;
+  // Model breakdown (per-model token usage)
+  modelBreakdown?: Record<string, TokenBreakdown>;
 }
 
 // Project stats for breakdown display

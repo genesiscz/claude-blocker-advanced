@@ -218,14 +218,170 @@
                 <span class="stats-usage-value" id="stats-cost">$0.00</span>
               </div>
             </div>
+
+            <!-- Detailed Token Breakdown -->
+            <div class="stats-token-breakdown">
+              <div class="section-header compact">
+                <h3>Token Breakdown</h3>
+              </div>
+              <div class="token-breakdown-grid">
+                <div class="token-breakdown-item">
+                  <span class="token-label">Input</span>
+                  <span class="token-value" id="stats-input-detail">0</span>
+                </div>
+                <div class="token-breakdown-item">
+                  <span class="token-label">Output</span>
+                  <span class="token-value" id="stats-output-detail">0</span>
+                </div>
+                <div class="token-breakdown-item cache">
+                  <span class="token-label">Cache Create</span>
+                  <span class="token-value" id="stats-cache-create">0</span>
+                </div>
+                <div class="token-breakdown-item cache">
+                  <span class="token-label">Cache Read</span>
+                  <span class="token-value" id="stats-cache-read">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Model Breakdown -->
+            <div class="stats-model-breakdown" id="stats-model-section" style="display: none;">
+              <div class="section-header compact">
+                <h3>By Model</h3>
+              </div>
+              <div class="model-breakdown-list" id="stats-model-list">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Backfill Progress -->
+            <div class="stats-backfill" id="stats-backfill" style="display: none;">
+              <div class="backfill-indicator">
+                <span class="backfill-spinner"></span>
+                <span class="backfill-text">Processing historical data...</span>
+                <span class="backfill-progress" id="backfill-progress">0%</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Cost Charts Section -->
+          <section class="stats-charts-section">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Cost Analytics</h2>
+                <p class="section-desc">Daily and cumulative spending trends</p>
+              </div>
+            </div>
+
+            <!-- Daily Cost Line Chart -->
+            <div class="chart-card">
+              <div class="chart-header">
+                <span class="chart-title">7-Day Cost Trend</span>
+                <span class="chart-total" id="chart-7day-total">$0.00</span>
+              </div>
+              <div class="chart-line-container" id="cost-line-chart">
+                <svg class="chart-svg" viewBox="0 0 640 180" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <linearGradient id="costGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stop-color="#FFD700" stop-opacity="0.4"/>
+                      <stop offset="100%" stop-color="#FFD700" stop-opacity="0"/>
+                    </linearGradient>
+                    <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#B8860B"/>
+                      <stop offset="50%" stop-color="#FFD700"/>
+                      <stop offset="100%" stop-color="#FFA500"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Grid lines -->
+                  <g class="chart-grid" id="cost-chart-grid"></g>
+                  <!-- Area fill -->
+                  <path class="chart-area" id="cost-chart-area" fill="url(#costGradient)"/>
+                  <!-- Line -->
+                  <path class="chart-line" id="cost-chart-line" stroke="url(#lineGradient)" fill="none" stroke-width="2.5"/>
+                  <!-- Data points -->
+                  <g class="chart-dots" id="cost-chart-dots"></g>
+                </svg>
+                <div class="chart-x-axis" id="cost-chart-x-axis"></div>
+                <div class="chart-tooltip" id="cost-chart-tooltip"></div>
+              </div>
+            </div>
+
+            <!-- Cumulative Cost Chart -->
+            <div class="chart-card">
+              <div class="chart-header">
+                <span class="chart-title">Month-to-Date</span>
+                <div class="chart-header-stats">
+                  <span class="chart-stat">
+                    <span class="chart-stat-label">Total</span>
+                    <span class="chart-stat-value" id="mtd-total">$0.00</span>
+                  </span>
+                  <span class="chart-stat">
+                    <span class="chart-stat-label">Projected</span>
+                    <span class="chart-stat-value projected" id="mtd-projected">$0.00</span>
+                  </span>
+                </div>
+              </div>
+              <div class="chart-line-container" id="cumulative-chart">
+                <svg class="chart-svg cumulative" viewBox="0 0 640 180" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <linearGradient id="cumulativeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.3"/>
+                      <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Grid lines -->
+                  <g class="chart-grid" id="cumulative-chart-grid"></g>
+                  <!-- Area fill -->
+                  <path class="chart-area" id="cumulative-chart-area" fill="url(#cumulativeGradient)"/>
+                  <!-- Daily bars -->
+                  <g class="chart-bars" id="cumulative-chart-bars"></g>
+                  <!-- Line -->
+                  <path class="chart-line cumulative" id="cumulative-chart-line" stroke="#22c55e" fill="none" stroke-width="2.5"/>
+                  <!-- Projected line -->
+                  <path class="chart-line-projected" id="cumulative-chart-projected" stroke="#22c55e" stroke-dasharray="4 4" fill="none" stroke-width="1.5" opacity="0.5"/>
+                  <!-- Data points -->
+                  <g class="chart-dots" id="cumulative-chart-dots"></g>
+                </svg>
+                <div class="chart-x-axis" id="cumulative-chart-x-axis"></div>
+                <div class="chart-tooltip" id="cumulative-chart-tooltip"></div>
+              </div>
+            </div>
+
+            <!-- Model Usage Donut Chart -->
+            <div class="chart-card model-chart-card">
+              <div class="chart-header">
+                <span class="chart-title">Model Usage</span>
+                <div class="chart-toggle">
+                  <button class="toggle-btn active" data-mode="cost" id="model-toggle-cost">Cost</button>
+                  <button class="toggle-btn" data-mode="tokens" id="model-toggle-tokens">Tokens</button>
+                </div>
+              </div>
+              <div class="model-chart-container">
+                <div class="model-donut-wrapper">
+                  <svg class="model-donut" viewBox="0 0 160 160" id="model-donut-svg">
+                    <circle class="donut-bg" cx="80" cy="80" r="60" fill="none" stroke="var(--bg-elevated)" stroke-width="20"/>
+                    <circle class="donut-segment opus" cx="80" cy="80" r="60" fill="none" stroke="#a855f7" stroke-width="20" id="donut-opus"/>
+                    <circle class="donut-segment sonnet" cx="80" cy="80" r="60" fill="none" stroke="#3b82f6" stroke-width="20" id="donut-sonnet"/>
+                    <circle class="donut-segment haiku" cx="80" cy="80" r="60" fill="none" stroke="#22c55e" stroke-width="20" id="donut-haiku"/>
+                  </svg>
+                  <div class="donut-center">
+                    <span class="donut-value" id="donut-center-value">$0</span>
+                    <span class="donut-label" id="donut-center-label">Total</span>
+                  </div>
+                </div>
+                <div class="model-legend" id="model-legend">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
+            </div>
           </section>
 
           <!-- Weekly Chart -->
           <section class="stats-weekly-section">
             <div class="section-header">
               <div class="section-title">
-                <h2>Last 7 Days</h2>
-                <p class="section-desc">Daily Claude usage patterns</p>
+                <h2>Activity Patterns</h2>
+                <p class="section-desc">Daily Claude usage by status</p>
               </div>
             </div>
 
