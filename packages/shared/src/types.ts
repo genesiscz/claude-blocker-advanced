@@ -179,3 +179,55 @@ export const EDITOR_COMMANDS: Record<EditorApp, string> = {
   sublime: "subl",
   webstorm: "webstorm",
 };
+
+// Historical session - session that has ended (for history display)
+export interface HistoricalSession {
+  id: string;
+  projectName: string;
+  initialCwd?: string; // Original project directory
+  cwd?: string; // Current directory at session end
+  startTime: string;
+  endTime: string;
+  lastActivity: string;
+  lastTool?: string;
+  toolCount: number;
+  totalDurationMs: number;
+  // Time breakdown per state
+  totalWorkingMs?: number;
+  totalWaitingMs?: number;
+  totalIdleMs?: number;
+  // Activity segments for timeline (timestamps in ms)
+  segments?: Array<{
+    status: "idle" | "working" | "waiting_for_input";
+    startTime: number;
+    endTime: number;
+  }>;
+  // Recent tool calls (up to 5)
+  recentTools?: ToolCall[];
+  // Token and cost tracking
+  totalTokens?: number;
+  costUsd?: number;
+}
+
+// Daily productivity stats
+export interface DailyStats {
+  date: string; // YYYY-MM-DD
+  totalWorkingMs: number;
+  totalWaitingMs: number;
+  totalIdleMs: number;
+  sessionsStarted: number;
+  sessionsEnded: number;
+  // Token and cost tracking
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+}
+
+// Project stats for breakdown display
+export interface ProjectStats {
+  projectName: string;
+  sessionCount: number;
+  totalDuration: number;
+  totalTokens: number;
+  totalCost: number;
+}

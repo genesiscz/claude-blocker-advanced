@@ -11,6 +11,22 @@ interface Session {
   lastTool?: string;
   toolCount: number;
   waitingForInputSince?: string;
+  // Token and cost tracking
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  // Recent tool calls
+  recentTools?: Array<{
+    name: string;
+    timestamp: string;
+    input?: {
+      file_path?: string;
+      command?: string;
+      pattern?: string;
+      description?: string;
+    };
+  }>;
 }
 
 // Historical session - session that has ended
@@ -45,6 +61,9 @@ interface HistoricalSession {
       description?: string;
     };
   }>;
+  // Token and cost tracking
+  totalTokens?: number;
+  costUsd?: number;
 }
 
 interface NotificationConfig {
@@ -85,6 +104,10 @@ interface DailyStats {
   totalIdleMs: number;
   sessionsStarted: number;
   sessionsEnded: number;
+  // Token and cost tracking
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
 }
 
 // Activity segment for timeline
@@ -173,7 +196,14 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
   const key = getStatsStorageKey(date);
   const result = await chrome.storage.local.get([key]);
   if (result[key]) {
-    return result[key] as DailyStats;
+    // Ensure backwards compatibility with older stats that may not have token fields
+    const stats = result[key] as DailyStats;
+    return {
+      ...stats,
+      totalInputTokens: stats.totalInputTokens ?? 0,
+      totalOutputTokens: stats.totalOutputTokens ?? 0,
+      totalCostUsd: stats.totalCostUsd ?? 0,
+    };
   }
   // Return default empty stats for the date
   return {
@@ -183,6 +213,9 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
     totalIdleMs: 0,
     sessionsStarted: 0,
     sessionsEnded: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCostUsd: 0,
   };
 }
 
@@ -233,6 +266,9 @@ async function addSessionToHistory(
     segments: tracking?.segments,
     // Include recent tools (up to 5)
     recentTools: session.recentTools?.slice(0, 5),
+    // Include token and cost data
+    totalTokens: session.totalTokens ?? 0,
+    costUsd: session.costUsd ?? 0,
   };
 
   const history = await loadSessionHistory();
@@ -287,6 +323,11 @@ async function updateDailyStats(
   for (const oldSession of oldSessions) {
     if (!newMap.has(oldSession.id)) {
       stats.sessionsEnded++;
+
+      // Aggregate token and cost data from ended session
+      stats.totalInputTokens += oldSession.inputTokens ?? 0;
+      stats.totalOutputTokens += oldSession.outputTokens ?? 0;
+      stats.totalCostUsd += oldSession.costUsd ?? 0;
 
       // Add remaining time from last known state
       const tracking = sessionStateTracking.get(oldSession.id);

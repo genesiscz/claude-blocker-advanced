@@ -67,6 +67,9 @@ interface HistoricalSession {
       description?: string;
     };
   }>;
+  // Token and cost tracking (optional - may not be present in older sessions)
+  totalTokens?: number;
+  costUsd?: number;
 }
 
 interface ExtensionState {
@@ -309,7 +312,10 @@ function formatDuration(ms: number): string {
 }
 
 // Format token count for display
-function formatTokens(tokens: number): string {
+function formatTokens(tokens: number | undefined): string {
+  if (tokens === undefined || tokens === null || isNaN(tokens)) {
+    return "0";
+  }
   if (tokens >= 1_000_000) {
     return `${(tokens / 1_000_000).toFixed(1)}M`;
   }
@@ -320,17 +326,17 @@ function formatTokens(tokens: number): string {
 }
 
 // Format cost for display
-function formatCost(usd: number): string {
+function formatCost(usd: number | undefined): string {
+  if (usd === undefined || usd === null || isNaN(usd) || usd <= 0) {
+    return "$0.00";
+  }
   if (usd >= 1) {
     return `$${usd.toFixed(2)}`;
   }
   if (usd >= 0.01) {
     return `${(usd * 100).toFixed(1)}¢`;
   }
-  if (usd > 0) {
-    return `<1¢`;
-  }
-  return "";
+  return `<1¢`;
 }
 
 // Format time for timeline axis
@@ -496,8 +502,8 @@ function getProjectStatsForDate(date: string, history: HistoricalSession[]): Pro
 
     project.sessionCount++;
     project.totalDuration += session.totalDurationMs;
-    project.totalTokens += session.totalTokens;
-    project.totalCost += session.costUsd;
+    project.totalTokens += session.totalTokens ?? 0;
+    project.totalCost += session.costUsd ?? 0;
 
     projectMap.set(session.projectName, project);
   }
@@ -534,12 +540,14 @@ function renderRingChart(stats: DailyStats): void {
   statsSessionsStarted.textContent = String(stats.sessionsStarted);
   statsSessionsEnded.textContent = String(stats.sessionsEnded);
 
-  // Update token and cost display
-  const totalTokens = stats.totalInputTokens + stats.totalOutputTokens;
+  // Update token and cost display (with fallbacks for older data)
+  const inputTokens = stats.totalInputTokens ?? 0;
+  const outputTokens = stats.totalOutputTokens ?? 0;
+  const totalTokens = inputTokens + outputTokens;
   statsTokens.textContent = formatTokens(totalTokens);
-  statsInputTokens.textContent = formatTokens(stats.totalInputTokens);
-  statsOutputTokens.textContent = formatTokens(stats.totalOutputTokens);
-  statsCost.textContent = formatCost(stats.totalCostUsd);
+  statsInputTokens.textContent = formatTokens(inputTokens);
+  statsOutputTokens.textContent = formatTokens(outputTokens);
+  statsCost.textContent = formatCost(stats.totalCostUsd ?? 0);
 
   // Update ring chart segments
   // The ring is drawn starting from the top (after -90deg rotation in CSS)
