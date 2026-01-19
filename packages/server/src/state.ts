@@ -1,7 +1,5 @@
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { createReadStream } from "fs";
-import { createInterface } from "readline";
 import { homedir } from "os";
 import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
@@ -36,24 +34,21 @@ interface RequestUsage {
   cacheReadTokens: number;
 }
 
-// Parse transcript file to extract total token usage
-async function parseTranscriptForTokens(transcriptPath: string): Promise<{
+// Parse transcript file to extract total token usage (synchronous to ensure completion before exit)
+function parseTranscriptForTokensSync(transcriptPath: string): {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   costUsd: number;
-}> {
+} {
   // Track usage by requestId to avoid counting duplicates from streaming chunks
   const requestUsage = new Map<string, RequestUsage>();
 
   try {
-    const fileStream = createReadStream(transcriptPath);
-    const rl = createInterface({
-      input: fileStream,
-      crlfDelay: Infinity,
-    });
+    const content = readFileSync(transcriptPath, "utf-8");
+    const lines = content.split("\n");
 
-    for await (const line of rl) {
+    for (const line of lines) {
       if (!line.trim()) continue;
 
       try {
@@ -123,6 +118,8 @@ async function parseTranscriptForTokens(transcriptPath: string): Promise<{
     cacheCreationTokens * COST_PER_INPUT_TOKEN + // Cache creation is billed at normal rate
     outputTokens * COST_PER_OUTPUT_TOKEN;
 
+  console.log(`[Transcript] Parsed ${requestUsage.size} requests: in=${inputTokens} cache_read=${cacheReadTokens} cache_create=${cacheCreationTokens} out=${outputTokens} total=${totalTokens} cost=$${costUsd.toFixed(4)}`);
+
   return { inputTokens: totalInputTokens, outputTokens, totalTokens, costUsd };
 }
 
@@ -191,6 +188,11 @@ function savePersistedData(data: PersistedData): void {
     }
     data.lastSaved = new Date().toISOString();
     writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+    // Calculate totals for logging
+    const totalTokens = data.history.reduce((sum, h) => sum + h.totalTokens, 0);
+    const totalCost = data.history.reduce((sum, h) => sum + h.costUsd, 0);
+    console.log(`[Save] ${DATA_FILE} - ${data.history.length} sessions, ${totalTokens} total tokens, $${totalCost.toFixed(4)} total cost`);
   } catch (err) {
     console.error("Failed to save persisted data:", err);
   }
@@ -267,9 +269,40 @@ class SessionState {
     }, 5000); // Save after 5 seconds of inactivity
   }
 
-  // Add a session to history when it ends
+  // Add or update a session in history when it ends
+  // If session already exists (resumed session), update it instead of adding duplicate
   private addToHistory(session: InternalSession): void {
     const now = new Date();
+
+    // Check if this session already exists in history
+    const existingIndex = this.persistedData.history.findIndex((h) => h.id === session.id);
+
+    if (existingIndex !== -1) {
+      // Update existing entry - transcript gives cumulative totals
+      const existing = this.persistedData.history[existingIndex];
+      const oldTokens = existing.totalTokens;
+      const oldCost = existing.costUsd;
+
+      existing.endTime = now.toISOString();
+      existing.lastTool = session.lastTool;
+      existing.toolCount = session.toolCount;
+      existing.totalDurationMs = now.getTime() - new Date(existing.startTime).getTime();
+      // Token data from transcript is cumulative, so just use new values
+      existing.inputTokens = session.inputTokens;
+      existing.outputTokens = session.outputTokens;
+      existing.totalTokens = session.totalTokens;
+      existing.costUsd = session.costUsd;
+
+      // Move to front of history (most recent)
+      this.persistedData.history.splice(existingIndex, 1);
+      this.persistedData.history.unshift(existing);
+
+      this.scheduleSave();
+      console.log(`[History] Updated: ${session.projectName} (resumed) tokens=${existing.totalTokens} (was ${oldTokens}) cost=$${existing.costUsd.toFixed(4)} (was $${oldCost.toFixed(4)})`);
+      return;
+    }
+
+    // New session - add to history
     const historicalSession: HistoricalSession = {
       id: session.id,
       projectName: session.projectName,
@@ -296,7 +329,7 @@ class SessionState {
     );
 
     this.scheduleSave();
-    console.log(`Session added to history: ${session.projectName}`);
+    console.log(`[History] Added: ${session.projectName} tokens=${historicalSession.totalTokens} cost=$${historicalSession.costUsd.toFixed(4)}`);
   }
 
   // Get session history
@@ -345,62 +378,61 @@ class SessionState {
           this.sessionInitialCwds.set(session_id, payload.cwd);
         }
         const initialCwd = this.sessionInitialCwds.get(session_id);
-        this.sessions.set(session_id, {
+
+        // Check if this session exists in history (resumed session)
+        const existingHistoricalSession = this.persistedData.history.find((h) => h.id === session_id);
+
+        const newSession: InternalSession = {
           id: session_id,
           status: "idle",
           projectName: getProjectName(initialCwd || payload.cwd, session_id),
           initialCwd,
           cwd: payload.cwd,
-          startTime: now,
+          startTime: existingHistoricalSession ? new Date(existingHistoricalSession.startTime) : now,
           lastActivity: now,
-          toolCount: 0,
+          toolCount: existingHistoricalSession?.toolCount ?? 0,
           recentTools: [],
-          inputTokens: 0,
-          outputTokens: 0,
-          totalTokens: 0,
-          costUsd: 0,
-        });
-        console.log(`Session started: ${getProjectName(initialCwd || payload.cwd, session_id)}`);
+          // Restore token data from history if available (resumed session)
+          inputTokens: existingHistoricalSession?.inputTokens ?? 0,
+          outputTokens: existingHistoricalSession?.outputTokens ?? 0,
+          totalTokens: existingHistoricalSession?.totalTokens ?? 0,
+          costUsd: existingHistoricalSession?.costUsd ?? 0,
+        };
+
+        this.sessions.set(session_id, newSession);
+
+        if (existingHistoricalSession) {
+          console.log(`Session resumed: ${newSession.projectName} (${existingHistoricalSession.totalTokens} tokens, $${existingHistoricalSession.costUsd.toFixed(4)} from previous run)`);
+        } else {
+          console.log(`Session started: ${getProjectName(initialCwd || payload.cwd, session_id)}`);
+        }
         break;
       }
 
       case "SessionEnd": {
         const endingSession = this.sessions.get(session_id);
         if (endingSession) {
-          // Try to read transcript for accurate token data
+          // Try to read transcript for accurate token data (synchronous to ensure completion)
           const transcriptPath = payload.transcript_path;
           if (transcriptPath && existsSync(transcriptPath)) {
-            // Parse transcript asynchronously
-            parseTranscriptForTokens(transcriptPath)
-              .then((tokenData) => {
-                // Update session with transcript data (more accurate than statusline)
-                if (tokenData.totalTokens > 0) {
-                  endingSession.inputTokens = tokenData.inputTokens;
-                  endingSession.outputTokens = tokenData.outputTokens;
-                  endingSession.totalTokens = tokenData.totalTokens;
-                  endingSession.costUsd = tokenData.costUsd;
-                  console.log(
-                    `Session ${endingSession.projectName} tokens from transcript: ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)})`
-                  );
-                }
-                this.addToHistory(endingSession);
-                this.sessions.delete(session_id);
-                this.broadcast();
-                console.log(`Session ended: ${endingSession.projectName}`);
-              })
-              .catch((err) => {
-                console.error("Error reading transcript:", err);
-                this.addToHistory(endingSession);
-                this.sessions.delete(session_id);
-                this.broadcast();
-                console.log(`Session ended: ${endingSession.projectName}`);
-              });
-            // Return early - the async handler will broadcast
-            return;
-          } else {
-            this.addToHistory(endingSession);
-            console.log(`Session ended: ${endingSession.projectName}`);
+            try {
+              const tokenData = parseTranscriptForTokensSync(transcriptPath);
+              // Update session with transcript data (more accurate than statusline)
+              if (tokenData.totalTokens > 0) {
+                endingSession.inputTokens = tokenData.inputTokens;
+                endingSession.outputTokens = tokenData.outputTokens;
+                endingSession.totalTokens = tokenData.totalTokens;
+                endingSession.costUsd = tokenData.costUsd;
+                console.log(
+                  `Session ${endingSession.projectName} tokens from transcript: ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)})`
+                );
+              }
+            } catch (err) {
+              console.error("Error reading transcript:", err);
+            }
           }
+          this.addToHistory(endingSession);
+          console.log(`Session ended: ${endingSession.projectName}`);
         }
         this.sessions.delete(session_id);
         break;
