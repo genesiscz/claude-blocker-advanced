@@ -1,8 +1,130 @@
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { createReadStream } from "fs";
+import { createInterface } from "readline";
 import { homedir } from "os";
 import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
+
+// Cost per token (approximate, based on Claude pricing)
+// Claude Sonnet: ~$3/M input, ~$15/M output
+// Claude Opus 4.5: ~$15/M input, ~$75/M output
+// Using average/blended rate for estimation
+const COST_PER_INPUT_TOKEN = 0.000003; // $3/M
+const COST_PER_OUTPUT_TOKEN = 0.000015; // $15/M
+const COST_PER_CACHE_INPUT_TOKEN = 0.0000003; // $0.30/M (10% of normal)
+
+interface TranscriptUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+interface TranscriptEntry {
+  type?: string;
+  requestId?: string;
+  message?: {
+    usage?: TranscriptUsage;
+  };
+}
+
+interface RequestUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+// Parse transcript file to extract total token usage
+async function parseTranscriptForTokens(transcriptPath: string): Promise<{
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+}> {
+  // Track usage by requestId to avoid counting duplicates from streaming chunks
+  const requestUsage = new Map<string, RequestUsage>();
+
+  try {
+    const fileStream = createReadStream(transcriptPath);
+    const rl = createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+
+      try {
+        const entry = JSON.parse(line) as TranscriptEntry;
+
+        // Only process assistant messages with usage data and a requestId
+        if (entry.type === "assistant" && entry.message?.usage && entry.requestId) {
+          const usage = entry.message.usage;
+          const requestId = entry.requestId;
+
+          // Get or create usage record for this request
+          const current = requestUsage.get(requestId) || {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationTokens: 0,
+            cacheReadTokens: 0,
+          };
+
+          // Update with maximum values (streaming chunks report cumulative)
+          if (usage.input_tokens) {
+            current.inputTokens = Math.max(current.inputTokens, usage.input_tokens);
+          }
+          if (usage.output_tokens) {
+            current.outputTokens = Math.max(current.outputTokens, usage.output_tokens);
+          }
+          if (usage.cache_creation_input_tokens) {
+            current.cacheCreationTokens = Math.max(
+              current.cacheCreationTokens,
+              usage.cache_creation_input_tokens
+            );
+          }
+          if (usage.cache_read_input_tokens) {
+            current.cacheReadTokens = Math.max(current.cacheReadTokens, usage.cache_read_input_tokens);
+          }
+
+          requestUsage.set(requestId, current);
+        }
+      } catch {
+        // Skip invalid JSON lines
+      }
+    }
+  } catch (err) {
+    console.error("Error parsing transcript:", err);
+  }
+
+  // Sum up all unique requests
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheCreationTokens = 0;
+  let cacheReadTokens = 0;
+
+  for (const usage of requestUsage.values()) {
+    inputTokens += usage.inputTokens;
+    outputTokens += usage.outputTokens;
+    cacheCreationTokens += usage.cacheCreationTokens;
+    cacheReadTokens += usage.cacheReadTokens;
+  }
+
+  // Total input includes direct input + cache reads
+  const totalInputTokens = inputTokens + cacheReadTokens;
+  const totalTokens = totalInputTokens + outputTokens;
+
+  // Calculate cost (cache reads are cheaper, cache creation has normal cost)
+  const costUsd =
+    inputTokens * COST_PER_INPUT_TOKEN +
+    cacheReadTokens * COST_PER_CACHE_INPUT_TOKEN +
+    cacheCreationTokens * COST_PER_INPUT_TOKEN + // Cache creation is billed at normal rate
+    outputTokens * COST_PER_OUTPUT_TOKEN;
+
+  return { inputTokens: totalInputTokens, outputTokens, totalTokens, costUsd };
+}
 
 type StateChangeCallback = (message: ServerMessage) => void;
 
@@ -245,8 +367,40 @@ class SessionState {
       case "SessionEnd": {
         const endingSession = this.sessions.get(session_id);
         if (endingSession) {
-          this.addToHistory(endingSession);
-          console.log(`Session ended: ${endingSession.projectName}`);
+          // Try to read transcript for accurate token data
+          const transcriptPath = payload.transcript_path;
+          if (transcriptPath && existsSync(transcriptPath)) {
+            // Parse transcript asynchronously
+            parseTranscriptForTokens(transcriptPath)
+              .then((tokenData) => {
+                // Update session with transcript data (more accurate than statusline)
+                if (tokenData.totalTokens > 0) {
+                  endingSession.inputTokens = tokenData.inputTokens;
+                  endingSession.outputTokens = tokenData.outputTokens;
+                  endingSession.totalTokens = tokenData.totalTokens;
+                  endingSession.costUsd = tokenData.costUsd;
+                  console.log(
+                    `Session ${endingSession.projectName} tokens from transcript: ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)})`
+                  );
+                }
+                this.addToHistory(endingSession);
+                this.sessions.delete(session_id);
+                this.broadcast();
+                console.log(`Session ended: ${endingSession.projectName}`);
+              })
+              .catch((err) => {
+                console.error("Error reading transcript:", err);
+                this.addToHistory(endingSession);
+                this.sessions.delete(session_id);
+                this.broadcast();
+                console.log(`Session ended: ${endingSession.projectName}`);
+              });
+            // Return early - the async handler will broadcast
+            return;
+          } else {
+            this.addToHistory(endingSession);
+            console.log(`Session ended: ${endingSession.projectName}`);
+          }
         }
         this.sessions.delete(session_id);
         break;
