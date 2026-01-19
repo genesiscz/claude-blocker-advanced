@@ -1,6 +1,6 @@
 # claude-blocker-advanced
 
-CLI tool and server for [Claude Blocker Advanced](https://github.com/genesiscz/claude-blocker) — block distracting websites unless Claude Code is actively running inference.
+CLI tool and server for [Claude Blocker Advanced](https://github.com/genesiscz/claude-blocker-advanced) — block distracting websites unless Claude Code is actively running inference.
 
 > **Fork of** [Theo's claude-blocker](https://github.com/T3-Content/claude-blocker) with advanced features.
 

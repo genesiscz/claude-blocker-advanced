@@ -79,9 +79,9 @@ We may update this privacy policy from time to time. Changes will be posted to t
 ## Contact
 
 For questions about this privacy policy, please open an issue at:
-https://github.com/genesiscz/claude-blocker/issues
+https://github.com/genesiscz/claude-blocker-advanced/issues
 
 ## Open Source
 
 Claude Blocker Advanced is open source software. You can review the complete source code at:
-https://github.com/genesiscz/claude-blocker
+https://github.com/genesiscz/claude-blocker-advanced

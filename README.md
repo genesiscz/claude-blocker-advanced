@@ -6,6 +6,26 @@ Block distracting websites unless [Claude Code](https://claude.ai/claude-code) i
 
 **The premise is simple:** if Claude is working, you should be too. When Claude stops, your distractions come back.
 
+## Screenshots
+
+<details>
+<summary><strong>📊 Dashboard View</strong> - Session monitoring with rich detail cards</summary>
+
+<img src="assets/dashboard.png" alt="Dashboard View" width="700">
+</details>
+
+<details>
+<summary><strong>⚙️ Settings & Configuration</strong> - Blocked domains, overlay, and notification settings</summary>
+
+<img src="assets/settings.png" alt="Settings View" width="700">
+</details>
+
+<details>
+<summary><strong>📈 Productivity Stats</strong> - Track usage, costs, and productivity by project</summary>
+
+<img src="assets/stats.png" alt="Stats View" width="700">
+</details>
+
 ## How It Works
 
 ```
@@ -84,8 +104,8 @@ npx claude-blocker-advanced --help
 
 ```bash
 # Clone and install
-git clone https://github.com/genesiscz/claude-blocker.git
-cd claude-blocker
+git clone https://github.com/genesiscz/claude-blocker-advanced.git
+cd claude-blocker-advanced
 pnpm install
 
 # Build everything

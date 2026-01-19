@@ -10,32 +10,32 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done**
 
 ### Server Enhancements
-- [ ] Track `startTime` per session (when SessionStart received)
-- [ ] Track `projectName` (derived from cwd basename)
-- [ ] Track `lastTool` (from PreToolUse events)
-- [ ] Track `toolCount` per session
-- [ ] Calculate `uptime` (now - startTime)
-- [ ] Calculate `waitDuration` (now - waitingForInputSince)
-- [ ] Sync shared types with server types (add `waiting_for_input` status)
+- [x] Track `startTime` per session (when SessionStart received)
+- [x] Track `projectName` (derived from cwd basename)
+- [x] Track `lastTool` (from PreToolUse events)
+- [x] Track `toolCount` per session
+- [x] Calculate `uptime` (now - startTime)
+- [x] Calculate `waitDuration` (now - waitingForInputSince)
+- [x] Sync shared types with server types (add `waiting_for_input` status)
 
 ### WebSocket Protocol
-- [ ] Send full session array instead of just counts
-- [ ] New message format: `{ type: "state", blocked, sessions: Session[] }`
-- [ ] Session object includes: id, status, projectName, cwd, startTime, lastActivity, lastTool, waitingForInputSince
+- [x] Send full session array instead of just counts
+- [x] New message format: `{ type: "state", blocked, sessions: Session[] }`
+- [x] Session object includes: id, status, projectName, cwd, startTime, lastActivity, lastTool, waitingForInputSince
 
 ### Extension Popup
-- [ ] Show session list with project names
-- [ ] Status badges (🟢 working, 🟡 waiting, ⚪ idle)
-- [ ] Uptime display per session
-- [ ] Wait time with warning colors (yellow >2min, red >5min)
-- [ ] Last tool used indicator
+- [x] Show session list with project names
+- [x] Status badges (🟢 working, 🟡 waiting, ⚪ idle)
+- [x] Uptime display per session
+- [x] Wait time with warning colors (yellow >2min, red >5min)
+- [x] Last tool used indicator
 
 ### Always-On Overlay (Content Script)
-- [ ] New mini-overlay in top-right corner (configurable position)
-- [ ] Shows compact session list: "ProjectName • 2h 34m • 🟢"
-- [ ] Expandable on hover for more details
-- [ ] Configurable: enable/disable, position, opacity
-- [ ] Draggable position with persistence
+- [x] New mini-overlay in top-right corner (configurable position)
+- [x] Shows compact session list: "ProjectName • 2h 34m • 🟢"
+- [x] Expandable on hover for more details
+- [x] Configurable: enable/disable, position, opacity
+- [x] Draggable position with persistence
 
 ---
 
@@ -43,10 +43,10 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done**
 
 ### Options Page Redesign
-- [ ] Full dashboard layout with sidebar navigation
-- [ ] Sessions panel with rich detail cards
-- [ ] Real-time updates without polling (WebSocket direct)
-- [ ] Session cards with:
+- [x] Full dashboard layout with sidebar navigation
+- [x] Sessions panel with rich detail cards
+- [x] Real-time updates without polling (WebSocket direct)
+- [x] Session cards with:
   - Project name (large)
   - Session ID (truncated, copy button)
   - Status badge with glow
@@ -54,18 +54,18 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
   - Wait time (if applicable)
   - Last tool used
   - Working directory path
-- [ ] Activity sparkline per session (last 30 min)
-- [ ] Filter/sort sessions by status, project, activity
+- [x] Activity sparkline per session (last 30 min)
+- [x] Filter/sort sessions by status, project, activity
 
 ### Settings Panel
-- [ ] Blocked domains management (existing)
-- [ ] Overlay configuration:
+- [x] Blocked domains management (existing)
+- [x] Overlay configuration:
   - Enable/disable always-on overlay
   - Position (top-left, top-right, bottom-left, bottom-right)
   - Opacity slider
   - Compact vs expanded mode
-- [ ] Notification preferences (Phase 3)
-- [ ] Sound preferences (Phase 3)
+- [x] Notification preferences (Phase 3)
+- [x] Sound preferences (Phase 3)
 
 ---
 
@@ -73,10 +73,10 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done (Chrome notifications only, sound alerts deferred)**
 
 ### Chrome Notifications
-- [ ] Session started notification
-- [ ] Session ended notification
-- [ ] Waiting for input notification (with configurable delay)
-- [ ] Session idle too long notification
+- [x] Session started notification
+- [x] Session ended notification
+- [x] Waiting for input notification (with configurable delay)
+- [x] Session idle too long notification
 - [ ] Daily summary notification (end of day)
 
 ### Sound Alerts
@@ -87,10 +87,10 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 - [ ] Test sound button in settings
 
 ### Notification Settings
-- [ ] Master enable/disable
-- [ ] Per-event toggle
-- [ ] Quiet hours configuration
-- [ ] Do Not Disturb mode
+- [x] Master enable/disable
+- [x] Per-event toggle
+- [x] Quiet hours configuration
+- [x] Do Not Disturb mode
 - [ ] Notification grouping preferences
 
 ---
@@ -99,23 +99,23 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done**
 
 ### Session Actions
-- [ ] Copy session ID to clipboard
-- [ ] Open project folder in Finder/Explorer
-- [ ] Open project in VS Code/Cursor (configurable)
-- [ ] Open transcript file
-- [ ] Pause blocking for specific session
+- [x] Copy session ID to clipboard
+- [x] Open project folder in Finder/Explorer
+- [x] Open project in VS Code/Cursor (configurable)
+- [x] Open transcript file
+- [x] Pause blocking for specific session
 - [ ] Rename/tag session with custom label
 
 ### Global Actions
-- [ ] Quick bypass (existing, enhanced)
-- [ ] Pause all blocking
-- [ ] Refresh all sessions
-- [ ] Export session data
+- [x] Quick bypass (existing, enhanced)
+- [x] Pause all blocking
+- [x] Refresh all sessions
+- [x] Export session data
 
 ### Keyboard Shortcuts
-- [ ] Alt+Shift+C - Open dashboard
-- [ ] Alt+Shift+B - Quick bypass
-- [ ] Configurable shortcuts in settings
+- [x] Alt+Shift+C - Open dashboard
+- [x] Alt+Shift+B - Quick bypass
+- [x] Configurable shortcuts in settings
 
 ---
 
@@ -123,22 +123,22 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done**
 
 ### Timeline View
-- [ ] Horizontal timeline showing session activity
-- [ ] Color-coded segments (working, waiting, idle)
-- [ ] Zoomable (hour, 4h, day view)
-- [ ] Hover for segment details
-- [ ] Multiple sessions stacked vertically
+- [x] Horizontal timeline showing session activity
+- [x] Color-coded segments (working, waiting, idle)
+- [x] Zoomable (hour, 4h, day view)
+- [x] Hover for segment details
+- [x] Multiple sessions stacked vertically
 
 ### Event Markers
-- [ ] Session start/end markers
-- [ ] Tool usage dots
-- [ ] User input markers
+- [x] Session start/end markers
+- [x] Tool usage dots
+- [x] User input markers
 - [ ] Error markers (future)
 
 ### Timeline Controls
-- [ ] Play/pause live updates
-- [ ] Jump to specific time
-- [ ] Export timeline as image
+- [x] Play/pause live updates
+- [x] Jump to specific time
+- [x] Export timeline as image
 
 ---
 
@@ -146,10 +146,10 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done (tracking backend only, UI in future)**
 
 ### Daily Stats
-- [ ] Total Claude time today
-- [ ] Active vs waiting vs idle breakdown
-- [ ] Sessions started/ended count
-- [ ] Most active project
+- [x] Total Claude time today
+- [x] Active vs waiting vs idle breakdown
+- [x] Sessions started/ended count
+- [x] Most active project
 
 ### Weekly/Monthly Stats
 - [ ] Productivity trends graph
@@ -158,15 +158,15 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 - [ ] Comparison with previous periods
 
 ### Insights
-- [ ] Average session duration
-- [ ] Average wait time
+- [x] Average session duration
+- [x] Average wait time
 - [ ] Most productive day of week
 - [ ] Time saved estimates
 
 ### Data Storage
-- [ ] Local storage for historical data
-- [ ] Export stats as JSON/CSV
-- [ ] Data retention settings (7d, 30d, 90d, forever)
+- [x] Local storage for historical data
+- [x] Export stats as JSON/CSV
+- [x] Data retention settings (7d, 30d, 90d, forever)
 
 ---
 
@@ -174,20 +174,20 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done**
 
 ### Session History
-- [ ] List of recent sessions (last 7 days)
-- [ ] Session metadata preserved after end
-- [ ] Quick filters (today, yesterday, this week)
+- [x] List of recent sessions (last 7 days)
+- [x] Session metadata preserved after end
+- [x] Quick filters (today, yesterday, this week)
 
 ### Resume Features
-- [ ] Click to open project directory
-- [ ] Click to open transcript
-- [ ] Copy last used command
+- [x] Click to open project directory
+- [x] Click to open transcript
+- [x] Copy last used command
 - [ ] Session notes/annotations (user-added)
 
 ### Session Bookmarks
-- [ ] Pin important sessions
+- [x] Pin important sessions
 - [ ] Custom tags/labels
-- [ ] Search past sessions
+- [x] Search past sessions
 
 ---
 
@@ -195,16 +195,16 @@ Transform claude-blocker-advanced from a simple site blocker into a comprehensiv
 **Status: Done (infrastructure ready, awaiting Claude Code hook data)**
 
 ### Per-Session Tokens
-- [ ] Track input/output tokens (requires hook enhancement)
-- [ ] Running total display
-- [ ] Token rate (tokens/minute)
-- [ ] Cost estimation (configurable rates)
+- [x] Track input/output tokens (requires hook enhancement)
+- [x] Running total display
+- [x] Token rate (tokens/minute)
+- [x] Cost estimation (configurable rates)
 
 ### Aggregate Token Stats
-- [ ] Daily token usage
-- [ ] Per-project token breakdown
-- [ ] Token usage trends
-- [ ] Budget alerts
+- [x] Daily token usage
+- [x] Per-project token breakdown
+- [x] Token usage trends
+- [x] Budget alerts
 
 ### Implementation Notes
 - Requires new hook data or Claude Code API integration

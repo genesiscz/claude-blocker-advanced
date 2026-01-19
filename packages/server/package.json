@@ -1,15 +1,15 @@
 {
   "name": "claude-blocker-advanced",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Block distracting websites unless Claude Code is actively running inference. Fork of Theo's claude-blocker with advanced features.",
   "author": "Martin Krizan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/genesiscz/claude-blocker.git"
+    "url": "https://github.com/genesiscz/claude-blocker-advanced.git"
   },
-  "homepage": "https://github.com/genesiscz/claude-blocker",
+  "homepage": "https://github.com/genesiscz/claude-blocker-advanced",
   "bugs": {
-    "url": "https://github.com/genesiscz/claude-blocker/issues"
+    "url": "https://github.com/genesiscz/claude-blocker-advanced/issues"
   },
   "type": "module",
   "bin": {

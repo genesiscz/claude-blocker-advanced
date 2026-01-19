@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Claude Blocker Advanced",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Block distracting websites unless Claude Code is actively running inference (fork of Theo's claude-blocker)",
-  "homepage_url": "https://github.com/genesiscz/claude-blocker",
+  "homepage_url": "https://github.com/genesiscz/claude-blocker-advanced",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icon-16.png",
