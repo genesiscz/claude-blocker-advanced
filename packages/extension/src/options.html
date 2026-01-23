@@ -218,6 +218,50 @@
                 <span class="stats-usage-value" id="stats-cost">$0.00</span>
               </div>
             </div>
+
+            <!-- Detailed Token Breakdown -->
+            <div class="stats-token-breakdown">
+              <div class="section-header compact">
+                <h3>Token Breakdown</h3>
+              </div>
+              <div class="token-breakdown-grid">
+                <div class="token-breakdown-item">
+                  <span class="token-label">Input</span>
+                  <span class="token-value" id="stats-input-detail">0</span>
+                </div>
+                <div class="token-breakdown-item">
+                  <span class="token-label">Output</span>
+                  <span class="token-value" id="stats-output-detail">0</span>
+                </div>
+                <div class="token-breakdown-item cache">
+                  <span class="token-label">Cache Create</span>
+                  <span class="token-value" id="stats-cache-create">0</span>
+                </div>
+                <div class="token-breakdown-item cache">
+                  <span class="token-label">Cache Read</span>
+                  <span class="token-value" id="stats-cache-read">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Model Breakdown -->
+            <div class="stats-model-breakdown" id="stats-model-section" style="display: none;">
+              <div class="section-header compact">
+                <h3>By Model</h3>
+              </div>
+              <div class="model-breakdown-list" id="stats-model-list">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Backfill Progress -->
+            <div class="stats-backfill" id="stats-backfill" style="display: none;">
+              <div class="backfill-indicator">
+                <span class="backfill-spinner"></span>
+                <span class="backfill-text">Processing historical data...</span>
+                <span class="backfill-progress" id="backfill-progress">0%</span>
+              </div>
+            </div>
           </section>
 
           <!-- Weekly Chart -->

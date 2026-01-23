@@ -1,16 +1,12 @@
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
-import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall } from "./types.js";
+import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall, TokenBreakdown, TrackedSubagent } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
+import { initializePricing, getPricing, calculateCost, type ModelPricing } from "./price-resolver.js";
 
-// Cost per token (approximate, based on Claude pricing)
-// Claude Sonnet: ~$3/M input, ~$15/M output
-// Claude Opus 4.5: ~$15/M input, ~$75/M output
-// Using average/blended rate for estimation
-const COST_PER_INPUT_TOKEN = 0.000003; // $3/M
-const COST_PER_OUTPUT_TOKEN = 0.000015; // $15/M
-const COST_PER_CACHE_INPUT_TOKEN = 0.0000003; // $0.30/M (10% of normal)
+// Initialize pricing on module load (non-blocking)
+initializePricing();
 
 interface TranscriptUsage {
   input_tokens?: number;
@@ -23,6 +19,7 @@ interface TranscriptEntry {
   type?: string;
   requestId?: string;
   message?: {
+    model?: string;
     usage?: TranscriptUsage;
   };
 }
@@ -32,15 +29,23 @@ interface RequestUsage {
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+  model?: string;
+}
+
+// Result of parsing a transcript
+interface TranscriptParseResult {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  model?: string;
+  modelBreakdown: Record<string, TokenBreakdown>;
 }
 
 // Parse transcript file to extract total token usage (synchronous to ensure completion before exit)
-function parseTranscriptForTokensSync(transcriptPath: string): {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  costUsd: number;
-} {
+function parseTranscriptForTokensSync(transcriptPath: string): TranscriptParseResult {
   // Track usage by requestId to avoid counting duplicates from streaming chunks
   const requestUsage = new Map<string, RequestUsage>();
 
@@ -58,6 +63,7 @@ function parseTranscriptForTokensSync(transcriptPath: string): {
         if (entry.type === "assistant" && entry.message?.usage && entry.requestId) {
           const usage = entry.message.usage;
           const requestId = entry.requestId;
+          const model = entry.message.model;
 
           // Get or create usage record for this request
           const current = requestUsage.get(requestId) || {
@@ -65,7 +71,13 @@ function parseTranscriptForTokensSync(transcriptPath: string): {
             outputTokens: 0,
             cacheCreationTokens: 0,
             cacheReadTokens: 0,
+            model: undefined,
           };
+
+          // Update model (use the first model we see for this request)
+          if (model && !current.model) {
+            current.model = model;
+          }
 
           // Update with maximum values (streaming chunks report cumulative)
           if (usage.input_tokens) {
@@ -94,33 +106,80 @@ function parseTranscriptForTokensSync(transcriptPath: string): {
     console.error("Error parsing transcript:", err);
   }
 
-  // Sum up all unique requests
+  // Sum up all unique requests and build model breakdown
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheCreationTokens = 0;
   let cacheReadTokens = 0;
+  let primaryModel: string | undefined;
+  const modelBreakdown: Record<string, TokenBreakdown> = {};
 
   for (const usage of requestUsage.values()) {
     inputTokens += usage.inputTokens;
     outputTokens += usage.outputTokens;
     cacheCreationTokens += usage.cacheCreationTokens;
     cacheReadTokens += usage.cacheReadTokens;
+
+    // Track the first model as primary (most likely the main session model)
+    if (usage.model && !primaryModel) {
+      primaryModel = usage.model;
+    }
+
+    // Build per-model breakdown
+    if (usage.model) {
+      const existing = modelBreakdown[usage.model] || {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      };
+      existing.inputTokens += usage.inputTokens;
+      existing.outputTokens += usage.outputTokens;
+      existing.cacheCreationTokens += usage.cacheCreationTokens;
+      existing.cacheReadTokens += usage.cacheReadTokens;
+      modelBreakdown[usage.model] = existing;
+    }
   }
 
-  // Total input includes direct input + cache reads
+  // Total tokens (input includes cache reads for context window purposes)
   const totalInputTokens = inputTokens + cacheReadTokens;
   const totalTokens = totalInputTokens + outputTokens;
 
-  // Calculate cost (cache reads are cheaper, cache creation has normal cost)
-  const costUsd =
-    inputTokens * COST_PER_INPUT_TOKEN +
-    cacheReadTokens * COST_PER_CACHE_INPUT_TOKEN +
-    cacheCreationTokens * COST_PER_INPUT_TOKEN + // Cache creation is billed at normal rate
-    outputTokens * COST_PER_OUTPUT_TOKEN;
+  // Calculate cost using model-specific pricing
+  // If we have model breakdown, calculate per-model and sum
+  // Otherwise use the primary model or default pricing
+  let costUsd = 0;
 
-  console.log(`[Transcript] Parsed ${requestUsage.size} requests: in=${inputTokens} cache_read=${cacheReadTokens} cache_create=${cacheCreationTokens} out=${outputTokens} total=${totalTokens} cost=$${costUsd.toFixed(4)}`);
+  if (Object.keys(modelBreakdown).length > 0) {
+    // Calculate cost per model and sum
+    for (const [model, tokens] of Object.entries(modelBreakdown)) {
+      costUsd += calculateCost(tokens, model);
+    }
+  } else {
+    // Use primary model or default pricing
+    const tokens: TokenBreakdown = {
+      inputTokens,
+      outputTokens,
+      cacheCreationTokens,
+      cacheReadTokens,
+    };
+    costUsd = calculateCost(tokens, primaryModel);
+  }
 
-  return { inputTokens: totalInputTokens, outputTokens, totalTokens, costUsd };
+  console.log(
+    `[Transcript] Parsed ${requestUsage.size} requests: model=${primaryModel || "unknown"} in=${inputTokens} cache_read=${cacheReadTokens} cache_create=${cacheCreationTokens} out=${outputTokens} total=${totalTokens} cost=$${costUsd.toFixed(4)}`
+  );
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    totalTokens,
+    costUsd,
+    model: primaryModel,
+    modelBreakdown,
+  };
 }
 
 type StateChangeCallback = (message: ServerMessage) => void;
@@ -146,10 +205,16 @@ interface HistoricalSession {
   lastTool?: string;
   toolCount: number;
   totalDurationMs: number;
+  // Token tracking (detailed breakdown)
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Model tracking
+  model?: string;
+  modelBreakdown?: Record<string, TokenBreakdown>;
 }
 
 // Derive project name from cwd or use truncated session ID
@@ -234,8 +299,12 @@ function toSession(internal: InternalSession): Session {
     waitingForInputSince: internal.waitingForInputSince?.toISOString(),
     inputTokens: internal.inputTokens,
     outputTokens: internal.outputTokens,
+    cacheCreationTokens: internal.cacheCreationTokens,
+    cacheReadTokens: internal.cacheReadTokens,
     totalTokens: internal.totalTokens,
     costUsd: internal.costUsd,
+    model: internal.model,
+    modelBreakdown: internal.modelBreakdown,
   };
 }
 
@@ -247,6 +316,8 @@ class SessionState {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private persistedData: PersistedData;
   private saveDebounceTimer: NodeJS.Timeout | null = null;
+  // Track active subagents by session ID -> agent ID -> TrackedSubagent
+  private activeSubagents: Map<string, Map<string, TrackedSubagent>> = new Map();
 
   constructor() {
     // Load persisted data on startup
@@ -290,8 +361,12 @@ class SessionState {
       // Token data from transcript is cumulative, so just use new values
       existing.inputTokens = session.inputTokens;
       existing.outputTokens = session.outputTokens;
+      existing.cacheCreationTokens = session.cacheCreationTokens;
+      existing.cacheReadTokens = session.cacheReadTokens;
       existing.totalTokens = session.totalTokens;
       existing.costUsd = session.costUsd;
+      existing.model = session.model;
+      existing.modelBreakdown = session.modelBreakdown;
 
       // Move to front of history (most recent)
       this.persistedData.history.splice(existingIndex, 1);
@@ -315,8 +390,12 @@ class SessionState {
       totalDurationMs: now.getTime() - session.startTime.getTime(),
       inputTokens: session.inputTokens,
       outputTokens: session.outputTokens,
+      cacheCreationTokens: session.cacheCreationTokens,
+      cacheReadTokens: session.cacheReadTokens,
       totalTokens: session.totalTokens,
       costUsd: session.costUsd,
+      model: session.model,
+      modelBreakdown: session.modelBreakdown,
     };
 
     // Add to beginning of history
@@ -395,8 +474,12 @@ class SessionState {
           // Restore token data from history if available (resumed session)
           inputTokens: existingHistoricalSession?.inputTokens ?? 0,
           outputTokens: existingHistoricalSession?.outputTokens ?? 0,
+          cacheCreationTokens: existingHistoricalSession?.cacheCreationTokens ?? 0,
+          cacheReadTokens: existingHistoricalSession?.cacheReadTokens ?? 0,
           totalTokens: existingHistoricalSession?.totalTokens ?? 0,
           costUsd: existingHistoricalSession?.costUsd ?? 0,
+          model: existingHistoricalSession?.model,
+          modelBreakdown: existingHistoricalSession?.modelBreakdown,
         };
 
         this.sessions.set(session_id, newSession);
@@ -421,10 +504,14 @@ class SessionState {
               if (tokenData.totalTokens > 0) {
                 endingSession.inputTokens = tokenData.inputTokens;
                 endingSession.outputTokens = tokenData.outputTokens;
+                endingSession.cacheCreationTokens = tokenData.cacheCreationTokens;
+                endingSession.cacheReadTokens = tokenData.cacheReadTokens;
                 endingSession.totalTokens = tokenData.totalTokens;
                 endingSession.costUsd = tokenData.costUsd;
+                endingSession.model = tokenData.model;
+                endingSession.modelBreakdown = tokenData.modelBreakdown;
                 console.log(
-                  `Session ${endingSession.projectName} tokens from transcript: ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)})`
+                  `Session ${endingSession.projectName} tokens from transcript: ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)}) model=${tokenData.model || "unknown"}`
                 );
               }
             } catch (err) {
@@ -512,6 +599,106 @@ class SessionState {
         this.accumulateTokens(idleSession, payload);
         break;
       }
+
+      case "SubagentStart": {
+        // Track the start of a subagent
+        const agentId = payload.agent_id;
+        const agentType = payload.agent_type;
+
+        if (!agentId) {
+          console.warn("[SubagentStart] Missing agent_id");
+          break;
+        }
+
+        // Get or create subagent map for this session
+        if (!this.activeSubagents.has(session_id)) {
+          this.activeSubagents.set(session_id, new Map());
+        }
+        const sessionSubagents = this.activeSubagents.get(session_id)!;
+
+        const subagent: TrackedSubagent = {
+          id: agentId,
+          type: agentType || "unknown",
+          startTime: new Date(),
+        };
+        sessionSubagents.set(agentId, subagent);
+
+        console.log(
+          `[Subagent] Started: ${agentType || "unknown"} (${agentId.substring(0, 8)}) for session ${session_id.substring(0, 8)}`
+        );
+        break;
+      }
+
+      case "SubagentStop": {
+        // Process subagent completion and aggregate tokens
+        const stoppedAgentId = payload.agent_id;
+        const agentTranscriptPath = payload.agent_transcript_path;
+
+        if (!stoppedAgentId) {
+          console.warn("[SubagentStop] Missing agent_id");
+          break;
+        }
+
+        // Get the subagent from tracking
+        const sessionSubagentsMap = this.activeSubagents.get(session_id);
+        const subagent = sessionSubagentsMap?.get(stoppedAgentId);
+
+        if (!subagent) {
+          console.warn(`[SubagentStop] Unknown subagent: ${stoppedAgentId.substring(0, 8)}`);
+        }
+
+        // Parse subagent transcript for token data
+        if (agentTranscriptPath && existsSync(agentTranscriptPath)) {
+          try {
+            const tokenData = parseTranscriptForTokensSync(agentTranscriptPath);
+            if (tokenData.totalTokens > 0) {
+              // Get the session and add subagent tokens to it
+              const session = this.sessions.get(session_id);
+              if (session) {
+                session.inputTokens += tokenData.inputTokens;
+                session.outputTokens += tokenData.outputTokens;
+                session.cacheCreationTokens += tokenData.cacheCreationTokens;
+                session.cacheReadTokens += tokenData.cacheReadTokens;
+                session.totalTokens += tokenData.totalTokens;
+                session.costUsd += tokenData.costUsd;
+
+                // Merge model breakdown
+                if (tokenData.modelBreakdown) {
+                  if (!session.modelBreakdown) {
+                    session.modelBreakdown = {};
+                  }
+                  for (const [model, tokens] of Object.entries(tokenData.modelBreakdown)) {
+                    const existing = session.modelBreakdown[model] || {
+                      inputTokens: 0,
+                      outputTokens: 0,
+                      cacheCreationTokens: 0,
+                      cacheReadTokens: 0,
+                    };
+                    existing.inputTokens += tokens.inputTokens;
+                    existing.outputTokens += tokens.outputTokens;
+                    existing.cacheCreationTokens += tokens.cacheCreationTokens;
+                    existing.cacheReadTokens += tokens.cacheReadTokens;
+                    session.modelBreakdown[model] = existing;
+                  }
+                }
+
+                console.log(
+                  `[Subagent] Tokens added from ${subagent?.type || "unknown"} (${stoppedAgentId.substring(0, 8)}): ${tokenData.totalTokens} ($${tokenData.costUsd.toFixed(4)})`
+                );
+              }
+            }
+          } catch (err) {
+            console.error(`[SubagentStop] Error parsing transcript:`, err);
+          }
+        }
+
+        // Remove from active tracking
+        if (subagent) {
+          subagent.endTime = new Date();
+          sessionSubagentsMap?.delete(stoppedAgentId);
+        }
+        break;
+      }
     }
 
     this.broadcast();
@@ -538,6 +725,8 @@ class SessionState {
         recentTools: [],
         inputTokens: 0,
         outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
         totalTokens: 0,
         costUsd: 0,
       });

@@ -11,11 +11,15 @@ interface Session {
   lastTool?: string;
   toolCount: number;
   waitingForInputSince?: string;
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
   inputTokens?: number;
   outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
   totalTokens?: number;
   costUsd?: number;
+  // Model tracking
+  model?: string;
   // Recent tool calls
   recentTools?: Array<{
     name: string;
@@ -61,9 +65,15 @@ interface HistoricalSession {
       description?: string;
     };
   }>;
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
   totalTokens?: number;
   costUsd?: number;
+  // Model tracking
+  model?: string;
 }
 
 interface NotificationConfig {
@@ -104,10 +114,19 @@ interface DailyStats {
   totalIdleMs: number;
   sessionsStarted: number;
   sessionsEnded: number;
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   totalCostUsd: number;
+  // Model breakdown (per-model token usage)
+  modelBreakdown?: Record<string, {
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+  }>;
 }
 
 // Activity segment for timeline
@@ -202,6 +221,8 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
       ...stats,
       totalInputTokens: stats.totalInputTokens ?? 0,
       totalOutputTokens: stats.totalOutputTokens ?? 0,
+      totalCacheCreationTokens: stats.totalCacheCreationTokens ?? 0,
+      totalCacheReadTokens: stats.totalCacheReadTokens ?? 0,
       totalCostUsd: stats.totalCostUsd ?? 0,
     };
   }
@@ -215,6 +236,8 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
     sessionsEnded: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
     totalCostUsd: 0,
   };
 }
@@ -756,6 +779,29 @@ function connect() {
           // Now receiving full sessions array from server
           state.sessions = newSessions;
           broadcast();
+        }
+
+        // Handle stats update from server
+        if (msg.type === "stats_update") {
+          // Store the server stats for the day
+          const serverStats = msg.dailyStats as DailyStats;
+          if (serverStats?.date) {
+            saveDailyStats(serverStats).catch((err) => {
+              console.error("[Claude Blocker Advanced] Failed to save server stats:", err);
+            });
+          }
+          // Broadcast stats update to any listening tabs
+          chrome.tabs.query({}, (tabs) => {
+            for (const tab of tabs) {
+              if (tab.id) {
+                chrome.tabs.sendMessage(tab.id, {
+                  type: "STATS_UPDATE",
+                  dailyStats: serverStats,
+                  backfillProgress: msg.backfillProgress,
+                }).catch(() => {});
+              }
+            }
+          });
         }
       } catch {}
     };

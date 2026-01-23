@@ -1,9 +1,97 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { execSync } from "child_process";
 import { WebSocketServer, WebSocket } from "ws";
-import type { HookPayload, ClientMessage } from "./types.js";
+import type { HookPayload, ClientMessage, ServerMessage, DailyStats } from "./types.js";
 import { DEFAULT_PORT } from "./types.js";
 import { state } from "./state.js";
+import {
+  runBackfill,
+  getHistoricalStats,
+  getDailyStatsRange,
+  needsBackfill,
+  type BackfillProgress,
+} from "./backfill.js";
+
+// Backfill state
+let backfillInProgress = false;
+let lastBackfillProgress: BackfillProgress | null = null;
+
+// Stats broadcast subscribers
+const statsSubscribers: Set<WebSocket> = new Set();
+
+// Get today's date key
+function getTodayDateKey(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Broadcast stats update to all WebSocket subscribers
+function broadcastStatsUpdate(): void {
+  if (statsSubscribers.size === 0) return;
+
+  const todayKey = getTodayDateKey();
+  const stats = getDailyStatsRange([todayKey]);
+  const todayStats: DailyStats = stats[0] || {
+    date: todayKey,
+    totalWorkingMs: 0,
+    totalWaitingMs: 0,
+    totalIdleMs: 0,
+    sessionsStarted: 0,
+    sessionsEnded: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCostUsd: 0,
+  };
+
+  const message: ServerMessage = {
+    type: "stats_update",
+    dailyStats: todayStats,
+    backfillProgress: lastBackfillProgress
+      ? {
+          totalFiles: lastBackfillProgress.totalFiles,
+          processedFiles: lastBackfillProgress.processedFiles,
+          status: lastBackfillProgress.status,
+        }
+      : undefined,
+  };
+
+  const messageStr = JSON.stringify(message);
+  for (const ws of statsSubscribers) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(messageStr);
+    }
+  }
+}
+
+// Log hook payload with truncated long fields
+function logHook(payload: HookPayload): void {
+  const truncate = (s: string | undefined, max = 60) =>
+    s && s.length > max ? s.substring(0, max) + "..." : s;
+
+  const log: Record<string, unknown> = {
+    event: payload.hook_event_name,
+    session: payload.session_id.substring(0, 8),
+  };
+
+  if (payload.tool_name) log.tool = payload.tool_name;
+  if (payload.cwd) log.cwd = truncate(payload.cwd, 40);
+  if (payload.transcript_path) log.transcript = truncate(payload.transcript_path, 50);
+  if (payload.input_tokens) log.in_tokens = payload.input_tokens;
+  if (payload.output_tokens) log.out_tokens = payload.output_tokens;
+  if (payload.cost_usd) log.cost = payload.cost_usd;
+
+  // Log tool_input keys only (not values - too large)
+  if (payload.tool_input) {
+    log.input_keys = Object.keys(payload.tool_input);
+  }
+
+  console.log("[Hook]", JSON.stringify(log));
+}
 
 function parseBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,6 +145,7 @@ export function startServer(port: number = DEFAULT_PORT): void {
           return;
         }
 
+        logHook(payload);
         state.handleHook(payload);
         sendJson(res, { ok: true });
       } catch {
@@ -220,6 +309,145 @@ export function startServer(port: number = DEFAULT_PORT): void {
       return;
     }
 
+    // Stats endpoint - get all stats
+    if (req.method === "GET" && url.pathname === "/stats") {
+      try {
+        const historicalStats = getHistoricalStats();
+        const history = state.getHistory();
+
+        // Calculate totals
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+        let totalCacheCreationTokens = 0;
+        let totalCacheReadTokens = 0;
+        let totalCost = 0;
+        let totalSessions = 0;
+
+        for (const stats of Object.values(historicalStats.dailyStats)) {
+          totalInputTokens += stats.totalInputTokens || 0;
+          totalOutputTokens += stats.totalOutputTokens || 0;
+          totalCacheCreationTokens += stats.totalCacheCreationTokens || 0;
+          totalCacheReadTokens += stats.totalCacheReadTokens || 0;
+          totalCost += stats.totalCostUsd || 0;
+          totalSessions += stats.sessionsEnded || 0;
+        }
+
+        // Get project stats from history
+        const projectMap = new Map<
+          string,
+          { sessionCount: number; totalDuration: number; totalTokens: number; totalCost: number }
+        >();
+        for (const session of history) {
+          const existing = projectMap.get(session.projectName) || {
+            sessionCount: 0,
+            totalDuration: 0,
+            totalTokens: 0,
+            totalCost: 0,
+          };
+          existing.sessionCount++;
+          existing.totalDuration += session.totalDurationMs;
+          existing.totalTokens += session.totalTokens || 0;
+          existing.totalCost += session.costUsd || 0;
+          projectMap.set(session.projectName, existing);
+        }
+
+        const projects = Array.from(projectMap.entries())
+          .map(([projectName, data]) => ({
+            projectName,
+            ...data,
+          }))
+          .sort((a, b) => b.totalCost - a.totalCost);
+
+        sendJson(res, {
+          daily: historicalStats.dailyStats,
+          projects,
+          totals: {
+            tokens: {
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              cacheCreationTokens: totalCacheCreationTokens,
+              cacheReadTokens: totalCacheReadTokens,
+            },
+            cost: totalCost,
+            sessions: totalSessions,
+          },
+          backfillStatus: {
+            complete: !backfillInProgress,
+            progress: lastBackfillProgress?.processedFiles || 0,
+            total: lastBackfillProgress?.totalFiles || 0,
+          },
+        });
+      } catch (error) {
+        sendJson(res, { error: String(error) }, 500);
+      }
+      return;
+    }
+
+    // Stats for specific date range
+    if (req.method === "GET" && url.pathname === "/stats/range") {
+      try {
+        const datesParam = url.searchParams.get("dates");
+        if (!datesParam) {
+          sendJson(res, { error: "dates parameter required (comma-separated YYYY-MM-DD)" }, 400);
+          return;
+        }
+        const dates = datesParam.split(",").map((d) => d.trim());
+        const stats = getDailyStatsRange(dates);
+        sendJson(res, { stats });
+      } catch (error) {
+        sendJson(res, { error: String(error) }, 500);
+      }
+      return;
+    }
+
+    // Stats for specific date
+    if (req.method === "GET" && url.pathname.startsWith("/stats/")) {
+      try {
+        const dateKey = url.pathname.replace("/stats/", "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+          sendJson(res, { error: "Invalid date format (expected YYYY-MM-DD)" }, 400);
+          return;
+        }
+        const stats = getDailyStatsRange([dateKey]);
+        const history = state.getHistory().filter((s) => s.endTime.startsWith(dateKey));
+
+        sendJson(res, {
+          date: dateKey,
+          stats: stats[0],
+          sessions: history,
+        });
+      } catch (error) {
+        sendJson(res, { error: String(error) }, 500);
+      }
+      return;
+    }
+
+    // Trigger manual backfill
+    if (req.method === "POST" && url.pathname === "/stats/backfill") {
+      if (backfillInProgress) {
+        sendJson(res, { status: "already_running", progress: lastBackfillProgress });
+        return;
+      }
+
+      // Start backfill in background
+      backfillInProgress = true;
+      runBackfill((progress) => {
+        lastBackfillProgress = progress;
+        broadcastStatsUpdate();
+      })
+        .then(() => {
+          backfillInProgress = false;
+          broadcastStatsUpdate();
+        })
+        .catch((err) => {
+          console.error("[Backfill] Error:", err);
+          backfillInProgress = false;
+        });
+
+      sendJson(res, { status: "started" });
+      return;
+    }
+
     // 404 for unknown routes
     sendJson(res, { error: "Not found" }, 404);
   });
@@ -237,12 +465,22 @@ export function startServer(port: number = DEFAULT_PORT): void {
       }
     });
 
+    // Add to stats subscribers by default
+    statsSubscribers.add(ws);
+
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString()) as ClientMessage;
 
         if (message.type === "ping") {
           ws.send(JSON.stringify({ type: "pong" }));
+        }
+
+        // Handle subscribe_stats message
+        if ((message as Record<string, unknown>).type === "subscribe_stats") {
+          statsSubscribers.add(ws);
+          // Send current stats immediately
+          broadcastStatsUpdate();
         }
       } catch {
         // Ignore invalid messages
@@ -252,10 +490,12 @@ export function startServer(port: number = DEFAULT_PORT): void {
     ws.on("close", () => {
       console.log("Extension disconnected");
       unsubscribe();
+      statsSubscribers.delete(ws);
     });
 
     ws.on("error", () => {
       unsubscribe();
+      statsSubscribers.delete(ws);
     });
   });
 
@@ -272,6 +512,33 @@ export function startServer(port: number = DEFAULT_PORT): void {
 │                                           │
 └───────────────────────────────────────────┘
 `);
+
+    // Run backfill on startup if needed
+    if (needsBackfill()) {
+      console.log("[Backfill] Starting historical transcript backfill...");
+      backfillInProgress = true;
+      runBackfill((progress) => {
+        lastBackfillProgress = progress;
+        if (progress.status === "processing") {
+          // Only log every 10 files to avoid spam
+          if (progress.processedFiles % 10 === 0 || progress.processedFiles === progress.totalFiles) {
+            console.log(
+              `[Backfill] Progress: ${progress.processedFiles}/${progress.totalFiles} files`
+            );
+          }
+        }
+        broadcastStatsUpdate();
+      })
+        .then(() => {
+          backfillInProgress = false;
+          console.log("[Backfill] Historical transcript backfill complete");
+          broadcastStatsUpdate();
+        })
+        .catch((err) => {
+          console.error("[Backfill] Error during backfill:", err);
+          backfillInProgress = false;
+        });
+    }
   });
 
   // Graceful shutdown - use once to prevent stacking handlers

@@ -151,10 +151,19 @@ interface DailyStats {
   totalIdleMs: number;
   sessionsStarted: number;
   sessionsEnded: number;
-  // Token and cost tracking
+  // Token and cost tracking (detailed breakdown)
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   totalCostUsd: number;
+  // Model breakdown (per-model token usage)
+  modelBreakdown?: Record<string, {
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+  }>;
 }
 
 const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
@@ -283,6 +292,17 @@ const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
 const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
 const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
 const statsCost = document.getElementById("stats-cost") as HTMLElement;
+// Detailed token breakdown elements
+const statsInputDetail = document.getElementById("stats-input-detail") as HTMLElement;
+const statsOutputDetail = document.getElementById("stats-output-detail") as HTMLElement;
+const statsCacheCreate = document.getElementById("stats-cache-create") as HTMLElement;
+const statsCacheRead = document.getElementById("stats-cache-read") as HTMLElement;
+// Model breakdown elements
+const statsModelSection = document.getElementById("stats-model-section") as HTMLElement;
+const statsModelList = document.getElementById("stats-model-list") as HTMLElement;
+// Backfill progress elements
+const statsBackfill = document.getElementById("stats-backfill") as HTMLElement;
+const backfillProgress = document.getElementById("backfill-progress") as HTMLElement;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -468,6 +488,8 @@ async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
           sessionsEnded: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
+          totalCacheCreationTokens: 0,
+          totalCacheReadTokens: 0,
           totalCostUsd: 0,
         })));
       }
@@ -515,6 +537,95 @@ function getProjectStatsForDate(date: string, history: HistoricalSession[]): Pro
 // Ring chart constants
 const RING_CIRCUMFERENCE = 2 * Math.PI * 52; // 2πr where r=52
 
+// Model badge class based on model name
+function getModelBadgeClass(modelName: string): string {
+  const lower = modelName.toLowerCase();
+  if (lower.includes("opus")) return "opus";
+  if (lower.includes("sonnet")) return "sonnet";
+  if (lower.includes("haiku")) return "haiku";
+  return "";
+}
+
+// Format model name for display
+function formatModelName(modelName: string): string {
+  // Extract the model type from full model ID
+  // e.g., "claude-opus-4-5-20251101" -> "Opus 4.5"
+  const lower = modelName.toLowerCase();
+  if (lower.includes("opus-4-5") || lower.includes("opus-4.5")) return "Opus 4.5";
+  if (lower.includes("opus-4")) return "Opus 4";
+  if (lower.includes("sonnet-4")) return "Sonnet 4";
+  if (lower.includes("sonnet-3-5") || lower.includes("sonnet-3.5")) return "Sonnet 3.5";
+  if (lower.includes("haiku-4-5") || lower.includes("haiku-4.5")) return "Haiku 4.5";
+  if (lower.includes("haiku")) return "Haiku";
+  return modelName;
+}
+
+// Render model breakdown section
+function renderModelBreakdown(modelBreakdown?: Record<string, {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}>): void {
+  if (!modelBreakdown || Object.keys(modelBreakdown).length === 0) {
+    statsModelSection.style.display = "none";
+    return;
+  }
+
+  statsModelSection.style.display = "block";
+
+  // Calculate cost per model
+  const modelData = Object.entries(modelBreakdown).map(([model, tokens]) => {
+    const totalTokens = tokens.inputTokens + tokens.outputTokens +
+                        tokens.cacheCreationTokens + tokens.cacheReadTokens;
+
+    // Estimate cost based on model (simplified)
+    let costPerMInput = 3; // Default Sonnet rates
+    let costPerMOutput = 15;
+    const lower = model.toLowerCase();
+    if (lower.includes("opus")) {
+      costPerMInput = 15;
+      costPerMOutput = 75;
+    } else if (lower.includes("haiku")) {
+      costPerMInput = 0.8;
+      costPerMOutput = 4;
+    }
+
+    const cost = (tokens.inputTokens * costPerMInput / 1_000_000) +
+                 (tokens.outputTokens * costPerMOutput / 1_000_000) +
+                 (tokens.cacheCreationTokens * costPerMInput * 1.25 / 1_000_000) +
+                 (tokens.cacheReadTokens * costPerMInput * 0.1 / 1_000_000);
+
+    return { model, tokens: totalTokens, cost };
+  }).sort((a, b) => b.cost - a.cost);
+
+  statsModelList.innerHTML = modelData.map(({ model, tokens, cost }) => {
+    const badgeClass = getModelBadgeClass(model);
+    const displayName = formatModelName(model);
+    return `
+      <div class="model-breakdown-item">
+        <span class="model-name">
+          ${displayName}
+          <span class="model-badge ${badgeClass}">${badgeClass || "claude"}</span>
+        </span>
+        <span class="model-stats">
+          <span class="model-tokens">${formatTokens(tokens)}</span>
+          <span class="model-cost">${formatCost(cost)}</span>
+        </span>
+      </div>
+    `;
+  }).join("");
+}
+
+// Show/hide backfill progress
+function showBackfillProgress(show: boolean, progress?: number, total?: number): void {
+  statsBackfill.style.display = show ? "block" : "none";
+  if (show && progress !== undefined && total !== undefined && total > 0) {
+    const pct = Math.round((progress / total) * 100);
+    backfillProgress.textContent = `${pct}%`;
+  }
+}
+
 // Render the ring chart
 function renderRingChart(stats: DailyStats): void {
   const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
@@ -543,11 +654,24 @@ function renderRingChart(stats: DailyStats): void {
   // Update token and cost display (with fallbacks for older data)
   const inputTokens = stats.totalInputTokens ?? 0;
   const outputTokens = stats.totalOutputTokens ?? 0;
-  const totalTokens = inputTokens + outputTokens;
+  const cacheCreationTokens = stats.totalCacheCreationTokens ?? 0;
+  const cacheReadTokens = stats.totalCacheReadTokens ?? 0;
+  // Total tokens includes: input + output + cache creation + cache read
+  const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
   statsTokens.textContent = formatTokens(totalTokens);
-  statsInputTokens.textContent = formatTokens(inputTokens);
+  // Input tokens shown includes regular input + cache reads (as they're both context)
+  statsInputTokens.textContent = formatTokens(inputTokens + cacheReadTokens);
   statsOutputTokens.textContent = formatTokens(outputTokens);
   statsCost.textContent = formatCost(stats.totalCostUsd ?? 0);
+
+  // Update detailed token breakdown
+  statsInputDetail.textContent = formatTokens(inputTokens);
+  statsOutputDetail.textContent = formatTokens(outputTokens);
+  statsCacheCreate.textContent = formatTokens(cacheCreationTokens);
+  statsCacheRead.textContent = formatTokens(cacheReadTokens);
+
+  // Update model breakdown
+  renderModelBreakdown(stats.modelBreakdown);
 
   // Update ring chart segments
   // The ring is drawn starting from the top (after -90deg rotation in CSS)
@@ -696,6 +820,8 @@ async function refreshStats(): Promise<void> {
     sessionsEnded: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
     totalCostUsd: 0,
   };
 
@@ -2255,6 +2381,27 @@ testSoundSay.addEventListener("click", () => testSound("say"));
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "STATE") {
     updateUI(message);
+  }
+
+  // Handle live stats updates from server
+  if (message.type === "STATS_UPDATE") {
+    const stats = message.dailyStats as DailyStats;
+    const backfill = message.backfillProgress as { totalFiles: number; processedFiles: number; status: string } | undefined;
+
+    // Update stats if we're viewing today and this is today's stats
+    const todayKey = getDateKey(new Date());
+    if (stats?.date === todayKey && currentStatsDate === todayKey) {
+      renderRingChart(stats);
+    }
+
+    // Show/hide backfill progress
+    if (backfill) {
+      showBackfillProgress(
+        backfill.status === "processing" || backfill.status === "scanning",
+        backfill.processedFiles,
+        backfill.totalFiles
+      );
+    }
   }
 });
 
