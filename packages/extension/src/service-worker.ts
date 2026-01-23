@@ -156,11 +156,13 @@ const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
 };
 
 const WS_URL = "ws://localhost:8765/ws";
+const SERVER_URL = "http://localhost:8765";
 const KEEPALIVE_INTERVAL = 20_000;
 const RECONNECT_BASE_DELAY = 1_000;
 const RECONNECT_MAX_DELAY = 30_000;
 const SESSION_HISTORY_MAX_DAYS = 7;
 const SESSION_HISTORY_STORAGE_KEY = "sessionHistory";
+const STATS_SYNC_DAYS = 10; // Number of days to sync on connect
 
 // The actual state - service worker is single source of truth
 interface State {
@@ -210,12 +212,87 @@ function getStatsStorageKey(date: string): string {
   return `stats_${date}`;
 }
 
-// Load daily stats from storage
+// Get last N days as date keys
+function getLastNDays(n: number): string[] {
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = 0; i < n; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    dates.push(`${year}-${month}-${day}`);
+  }
+  return dates;
+}
+
+// Sync recent stats from server on connect
+async function syncRecentStats(): Promise<void> {
+  if (!state.serverConnected) return;
+
+  try {
+    const dates = getLastNDays(STATS_SYNC_DAYS);
+    const response = await fetch(`${SERVER_URL}/stats/range?dates=${dates.join(",")}`);
+    if (!response.ok) {
+      console.log("[Claude Blocker Advanced] Failed to sync stats from server:", response.status);
+      return;
+    }
+
+    const data = await response.json();
+    // Server returns { stats: [...] }
+    const statsArray = data?.stats ?? data;
+    if (!Array.isArray(statsArray)) {
+      console.log("[Claude Blocker Advanced] Invalid stats response from server");
+      return;
+    }
+
+    // Save each day's stats to local storage
+    for (const stats of statsArray) {
+      if (stats?.date) {
+        await saveDailyStats(stats);
+      }
+    }
+
+    console.log(`[Claude Blocker Advanced] Synced ${statsArray.length} days of stats from server`);
+  } catch (err) {
+    console.log("[Claude Blocker Advanced] Error syncing stats:", err);
+  }
+}
+
+// Fetch stats for a specific date from server
+async function fetchStatsFromServer(date: string): Promise<DailyStats | null> {
+  if (!state.serverConnected) return null;
+
+  try {
+    const response = await fetch(`${SERVER_URL}/stats/${date}`);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data?.stats) {
+      // Save to local storage as cache
+      await saveDailyStats(data.stats);
+      return data.stats;
+    }
+  } catch {
+    // Server not available, fall back to local storage
+  }
+  return null;
+}
+
+// Check if a date is within the last N days
+function isWithinLastNDays(date: string, n: number): boolean {
+  const dates = getLastNDays(n);
+  return dates.includes(date);
+}
+
+// Load daily stats from storage, fetching from server if needed
 async function loadDailyStats(date: string): Promise<DailyStats> {
   const key = getStatsStorageKey(date);
   const result = await chrome.storage.local.get([key]);
+
+  // If we have cached data, return it (it's already synced from server for recent days)
   if (result[key]) {
-    // Ensure backwards compatibility with older stats that may not have token fields
     const stats = result[key] as DailyStats;
     return {
       ...stats,
@@ -226,6 +303,15 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
       totalCostUsd: stats.totalCostUsd ?? 0,
     };
   }
+
+  // For older dates (beyond sync range), try to fetch from server on demand
+  if (!isWithinLastNDays(date, STATS_SYNC_DAYS) && state.serverConnected) {
+    const serverStats = await fetchStatsFromServer(date);
+    if (serverStats) {
+      return serverStats;
+    }
+  }
+
   // Return default empty stats for the date
   return {
     date,
@@ -758,6 +844,11 @@ function connect() {
       retryCount = 0;
       startKeepalive();
       broadcast();
+
+      // Sync recent stats from server on connect
+      syncRecentStats().catch((err) => {
+        console.log("[Claude Blocker Advanced] Failed to sync stats on connect:", err);
+      });
     };
 
     websocket.onmessage = (event) => {
@@ -973,6 +1064,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => {
         sendResponse({ success: false, error: String(error) });
       });
+    return true;
+  }
+
+  if (message.type === "SYNC_STATS") {
+    // Force sync stats from server
+    syncRecentStats()
+      .then(() => {
+        sendResponse({ success: true, serverConnected: state.serverConnected });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: String(err) });
+      });
+    return true;
+  }
+
+  if (message.type === "GET_SERVER_STATUS") {
+    sendResponse({
+      serverConnected: state.serverConnected,
+    });
     return true;
   }
 

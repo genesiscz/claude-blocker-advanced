@@ -304,6 +304,41 @@ const statsModelList = document.getElementById("stats-model-list") as HTMLElemen
 const statsBackfill = document.getElementById("stats-backfill") as HTMLElement;
 const backfillProgress = document.getElementById("backfill-progress") as HTMLElement;
 
+// Cost chart elements
+const chart7DayTotal = document.getElementById("chart-7day-total") as HTMLElement;
+const costChartGrid = document.querySelector("#cost-chart-grid") as SVGGElement | null;
+const costChartArea = document.querySelector("#cost-chart-area") as SVGPathElement | null;
+const costChartLine = document.querySelector("#cost-chart-line") as SVGPathElement | null;
+const costChartDots = document.querySelector("#cost-chart-dots") as SVGGElement | null;
+const costChartXAxis = document.getElementById("cost-chart-x-axis") as HTMLElement;
+const costChartTooltip = document.getElementById("cost-chart-tooltip") as HTMLElement;
+
+// Cumulative chart elements
+const mtdTotal = document.getElementById("mtd-total") as HTMLElement;
+const mtdProjected = document.getElementById("mtd-projected") as HTMLElement;
+const cumulativeChartGrid = document.querySelector("#cumulative-chart-grid") as SVGGElement | null;
+const cumulativeChartArea = document.querySelector("#cumulative-chart-area") as SVGPathElement | null;
+const cumulativeChartBars = document.querySelector("#cumulative-chart-bars") as SVGGElement | null;
+const cumulativeChartLine = document.querySelector("#cumulative-chart-line") as SVGPathElement | null;
+const cumulativeChartProjected = document.querySelector("#cumulative-chart-projected") as SVGPathElement | null;
+const cumulativeChartDots = document.querySelector("#cumulative-chart-dots") as SVGGElement | null;
+const cumulativeChartXAxis = document.getElementById("cumulative-chart-x-axis") as HTMLElement;
+const cumulativeChartTooltip = document.getElementById("cumulative-chart-tooltip") as HTMLElement;
+
+// Model donut chart elements
+const donutOpus = document.querySelector("#donut-opus") as SVGCircleElement | null;
+const donutSonnet = document.querySelector("#donut-sonnet") as SVGCircleElement | null;
+const donutHaiku = document.querySelector("#donut-haiku") as SVGCircleElement | null;
+const donutCenterValue = document.getElementById("donut-center-value") as HTMLElement;
+const donutCenterLabel = document.getElementById("donut-center-label") as HTMLElement;
+const modelLegend = document.getElementById("model-legend") as HTMLElement;
+const modelToggleCost = document.getElementById("model-toggle-cost") as HTMLButtonElement;
+const modelToggleTokens = document.getElementById("model-toggle-tokens") as HTMLButtonElement;
+
+// Chart state
+let modelChartMode: "cost" | "tokens" = "cost";
+let cachedStatsArray: DailyStats[] = [];
+
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
 let currentOverlayConfig: OverlayConfig = DEFAULT_OVERLAY_CONFIG;
@@ -752,7 +787,385 @@ function renderWeeklyChart(statsArray: DailyStats[]): void {
   statsChartLabels.innerHTML = labelsHtml;
 }
 
-// Render project breakdown for selected date
+// Chart constants
+const CHART_WIDTH = 640;
+const CHART_HEIGHT = 160;
+const CHART_PADDING = { left: 30, right: 30, top: 20, bottom: 20 };
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * 60; // r=60
+
+// Generate smooth bezier curve path from points
+function generateSmoothPath(points: Array<{x: number; y: number}>, closed = false): string {
+  if (points.length < 2) return "";
+
+  const tension = 0.3;
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(i - 1, 0)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(i + 2, points.length - 1)];
+
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+
+  if (closed) {
+    path += ` L ${points[points.length - 1].x} ${CHART_HEIGHT - CHART_PADDING.bottom}`;
+    path += ` L ${points[0].x} ${CHART_HEIGHT - CHART_PADDING.bottom} Z`;
+  }
+
+  return path;
+}
+
+// Render 7-day cost line chart
+function renderCostLineChart(statsArray: DailyStats[]): void {
+  if (!costChartLine || !costChartArea || !costChartDots || !costChartXAxis) return;
+
+  // Calculate total and find max
+  let total = 0;
+  let maxCost = 0;
+  for (const s of statsArray) {
+    total += s.totalCostUsd ?? 0;
+    if ((s.totalCostUsd ?? 0) > maxCost) maxCost = s.totalCostUsd ?? 0;
+  }
+
+  // Update total display
+  chart7DayTotal.textContent = formatCost(total);
+
+  // If no data, show flat line
+  if (maxCost === 0) maxCost = 1;
+
+  // Add 10% padding to max
+  maxCost *= 1.1;
+
+  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
+  const stepX = usableWidth / (statsArray.length - 1 || 1);
+
+  // Generate points
+  const points: Array<{x: number; y: number; cost: number; date: string}> = statsArray.map((s, i) => ({
+    x: CHART_PADDING.left + i * stepX,
+    y: CHART_PADDING.top + usableHeight - ((s.totalCostUsd ?? 0) / maxCost) * usableHeight,
+    cost: s.totalCostUsd ?? 0,
+    date: s.date,
+  }));
+
+  // Draw line
+  const linePath = generateSmoothPath(points);
+  costChartLine.setAttribute("d", linePath);
+
+  // Draw area
+  const areaPath = generateSmoothPath(points, true);
+  costChartArea.setAttribute("d", areaPath);
+
+  // Draw grid lines
+  if (costChartGrid) {
+    let gridHtml = "";
+    const gridLines = 4;
+    for (let i = 0; i <= gridLines; i++) {
+      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
+      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
+    }
+    costChartGrid.innerHTML = gridHtml;
+  }
+
+  // Draw dots
+  let dotsHtml = "";
+  for (const p of points) {
+    dotsHtml += `<circle cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cost="${p.cost}"/>`;
+  }
+  costChartDots.innerHTML = dotsHtml;
+
+  // Add hover events for dots
+  costChartDots.querySelectorAll("circle").forEach(dot => {
+    dot.addEventListener("mouseenter", (e) => {
+      const target = e.target as SVGCircleElement;
+      const date = target.dataset.date ?? "";
+      const cost = parseFloat(target.dataset.cost ?? "0");
+      showChartTooltip(costChartTooltip, target, date, cost);
+    });
+    dot.addEventListener("mouseleave", () => {
+      costChartTooltip.classList.remove("visible");
+    });
+  });
+
+  // X-axis labels
+  const today = getDateKey(new Date());
+  costChartXAxis.innerHTML = points.map(p => {
+    const isToday = p.date === today;
+    return `<span class="chart-x-label ${isToday ? "active" : ""}">${getShortDayName(p.date)}</span>`;
+  }).join("");
+}
+
+// Render month-to-date cumulative chart
+function renderCumulativeChart(statsArray: DailyStats[]): void {
+  if (!cumulativeChartLine || !cumulativeChartArea || !cumulativeChartDots || !cumulativeChartXAxis || !cumulativeChartBars) return;
+
+  // Sort by date and calculate cumulative
+  const sorted = [...statsArray].sort((a, b) => a.date.localeCompare(b.date));
+  let cumulative = 0;
+  const cumulativeData = sorted.map(s => {
+    cumulative += s.totalCostUsd ?? 0;
+    return { ...s, cumulative, daily: s.totalCostUsd ?? 0 };
+  });
+
+  const total = cumulative;
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const dayOfMonth = new Date().getDate();
+  const avgPerDay = dayOfMonth > 0 ? total / dayOfMonth : 0;
+  const projected = avgPerDay * daysInMonth;
+
+  // Update stats
+  mtdTotal.textContent = formatCost(total);
+  mtdProjected.textContent = formatCost(projected);
+
+  // Find max for scaling
+  let maxCumulative = Math.max(cumulative, projected);
+  if (maxCumulative === 0) maxCumulative = 1;
+  maxCumulative *= 1.1;
+
+  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
+  const stepX = usableWidth / (cumulativeData.length - 1 || 1);
+  const barWidth = Math.min(stepX * 0.6, 30);
+
+  // Generate points
+  const points: Array<{x: number; y: number; cumulative: number; daily: number; date: string}> = cumulativeData.map((s, i) => ({
+    x: CHART_PADDING.left + i * stepX,
+    y: CHART_PADDING.top + usableHeight - (s.cumulative / maxCumulative) * usableHeight,
+    cumulative: s.cumulative,
+    daily: s.daily,
+    date: s.date,
+  }));
+
+  // Draw bars
+  let barsHtml = "";
+  const barMaxHeight = usableHeight * 0.4;
+  const maxDaily = Math.max(...cumulativeData.map(d => d.daily), 1);
+  for (const p of points) {
+    const barHeight = (p.daily / maxDaily) * barMaxHeight;
+    const barY = CHART_HEIGHT - CHART_PADDING.bottom - barHeight;
+    barsHtml += `<rect x="${p.x - barWidth / 2}" y="${barY}" width="${barWidth}" height="${barHeight}" data-date="${p.date}" data-daily="${p.daily}"/>`;
+  }
+  cumulativeChartBars.innerHTML = barsHtml;
+
+  // Draw line
+  const linePath = generateSmoothPath(points);
+  cumulativeChartLine.setAttribute("d", linePath);
+
+  // Draw area
+  const areaPath = generateSmoothPath(points, true);
+  cumulativeChartArea.setAttribute("d", areaPath);
+
+  // Draw projected line
+  if (cumulativeChartProjected && points.length > 0) {
+    const lastPoint = points[points.length - 1];
+    const projectedY = CHART_PADDING.top + usableHeight - (projected / maxCumulative) * usableHeight;
+    cumulativeChartProjected.setAttribute("d", `M ${lastPoint.x} ${lastPoint.y} L ${CHART_WIDTH - CHART_PADDING.right} ${projectedY}`);
+  }
+
+  // Draw grid
+  if (cumulativeChartGrid) {
+    let gridHtml = "";
+    const gridLines = 4;
+    for (let i = 0; i <= gridLines; i++) {
+      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
+      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
+    }
+    cumulativeChartGrid.innerHTML = gridHtml;
+  }
+
+  // Draw dots
+  let dotsHtml = "";
+  for (const p of points) {
+    dotsHtml += `<circle class="cumulative" cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cumulative="${p.cumulative}" data-daily="${p.daily}"/>`;
+  }
+  cumulativeChartDots.innerHTML = dotsHtml;
+
+  // Add hover events
+  cumulativeChartDots.querySelectorAll("circle").forEach(dot => {
+    dot.addEventListener("mouseenter", (e) => {
+      const target = e.target as SVGCircleElement;
+      const date = target.dataset.date ?? "";
+      const cumVal = parseFloat(target.dataset.cumulative ?? "0");
+      const dailyVal = parseFloat(target.dataset.daily ?? "0");
+      showCumulativeTooltip(cumulativeChartTooltip, target, date, cumVal, dailyVal);
+    });
+    dot.addEventListener("mouseleave", () => {
+      cumulativeChartTooltip.classList.remove("visible");
+    });
+  });
+
+  // X-axis labels
+  const today = getDateKey(new Date());
+  cumulativeChartXAxis.innerHTML = points.map(p => {
+    const isToday = p.date === today;
+    const dayNum = parseInt(p.date.split("-")[2]);
+    return `<span class="chart-x-label ${isToday ? "active" : ""}">${dayNum}</span>`;
+  }).join("");
+}
+
+// Show tooltip for cost chart
+function showChartTooltip(tooltip: HTMLElement, target: SVGCircleElement, date: string, cost: number): void {
+  const rect = target.getBoundingClientRect();
+  const containerRect = tooltip.parentElement?.getBoundingClientRect();
+  if (!containerRect) return;
+
+  tooltip.innerHTML = `
+    <div class="tooltip-date">${formatStatsDate(date)}</div>
+    <div class="tooltip-value">${formatCost(cost)}</div>
+  `;
+
+  const x = rect.left - containerRect.left + rect.width / 2;
+  const y = rect.top - containerRect.top - 10;
+
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+  tooltip.style.transform = "translate(-50%, -100%)";
+  tooltip.classList.add("visible");
+}
+
+// Show tooltip for cumulative chart
+function showCumulativeTooltip(tooltip: HTMLElement, target: SVGCircleElement, date: string, cumulative: number, daily: number): void {
+  const rect = target.getBoundingClientRect();
+  const containerRect = tooltip.parentElement?.getBoundingClientRect();
+  if (!containerRect) return;
+
+  tooltip.innerHTML = `
+    <div class="tooltip-date">${formatStatsDate(date)}</div>
+    <div class="tooltip-value cumulative">${formatCost(cumulative)}</div>
+    <div class="tooltip-daily">+${formatCost(daily)} today</div>
+  `;
+
+  const x = rect.left - containerRect.left + rect.width / 2;
+  const y = rect.top - containerRect.top - 10;
+
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+  tooltip.style.transform = "translate(-50%, -100%)";
+  tooltip.classList.add("visible");
+}
+
+// Render model donut chart
+function renderModelDonutChart(modelBreakdown: Record<string, {inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number}> | undefined): void {
+  if (!donutOpus || !donutSonnet || !donutHaiku || !modelLegend) return;
+
+  // Calculate totals per model
+  type ModelData = { tokens: number; cost: number };
+  const modelData: Record<string, ModelData> = { opus: { tokens: 0, cost: 0 }, sonnet: { tokens: 0, cost: 0 }, haiku: { tokens: 0, cost: 0 } };
+
+  if (modelBreakdown) {
+    for (const [model, tokens] of Object.entries(modelBreakdown)) {
+      const lower = model.toLowerCase();
+      const totalTokens = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+
+      // Estimate cost
+      let costPerMInput = 3, costPerMOutput = 15;
+      let target = "sonnet";
+      if (lower.includes("opus")) {
+        costPerMInput = 15; costPerMOutput = 75; target = "opus";
+      } else if (lower.includes("haiku")) {
+        costPerMInput = 0.8; costPerMOutput = 4; target = "haiku";
+      }
+
+      const cost = (tokens.inputTokens * costPerMInput / 1_000_000) +
+                   (tokens.outputTokens * costPerMOutput / 1_000_000) +
+                   (tokens.cacheCreationTokens * costPerMInput * 1.25 / 1_000_000) +
+                   (tokens.cacheReadTokens * costPerMInput * 0.1 / 1_000_000);
+
+      modelData[target].tokens += totalTokens;
+      modelData[target].cost += cost;
+    }
+  }
+
+  // Calculate totals
+  const totalCost = modelData.opus.cost + modelData.sonnet.cost + modelData.haiku.cost;
+  const totalTokens = modelData.opus.tokens + modelData.sonnet.tokens + modelData.haiku.tokens;
+  const total = modelChartMode === "cost" ? totalCost : totalTokens;
+
+  // Update center
+  donutCenterValue.textContent = modelChartMode === "cost" ? formatCost(totalCost) : formatTokens(totalTokens);
+  donutCenterLabel.textContent = modelChartMode === "cost" ? "Total Cost" : "Total Tokens";
+
+  // Calculate percentages and arc lengths
+  const getValue = (m: ModelData) => modelChartMode === "cost" ? m.cost : m.tokens;
+  const opusVal = getValue(modelData.opus);
+  const sonnetVal = getValue(modelData.sonnet);
+  const haikuVal = getValue(modelData.haiku);
+
+  const opusPct = total > 0 ? opusVal / total : 0;
+  const sonnetPct = total > 0 ? sonnetVal / total : 0;
+  const haikuPct = total > 0 ? haikuVal / total : 0;
+
+  // Draw segments (stacked)
+  const opusLen = opusPct * DONUT_CIRCUMFERENCE;
+  const sonnetLen = sonnetPct * DONUT_CIRCUMFERENCE;
+  const haikuLen = haikuPct * DONUT_CIRCUMFERENCE;
+
+  donutOpus.style.strokeDasharray = `${opusLen} ${DONUT_CIRCUMFERENCE}`;
+  donutOpus.style.strokeDashoffset = "0";
+
+  donutSonnet.style.strokeDasharray = `${sonnetLen} ${DONUT_CIRCUMFERENCE}`;
+  donutSonnet.style.strokeDashoffset = String(-opusLen);
+
+  donutHaiku.style.strokeDasharray = `${haikuLen} ${DONUT_CIRCUMFERENCE}`;
+  donutHaiku.style.strokeDashoffset = String(-(opusLen + sonnetLen));
+
+  // Render legend
+  const legendItems = [
+    { name: "Opus 4.5", key: "opus", color: "opus", tokens: modelData.opus.tokens, cost: modelData.opus.cost, pct: opusPct },
+    { name: "Sonnet 4", key: "sonnet", color: "sonnet", tokens: modelData.sonnet.tokens, cost: modelData.sonnet.cost, pct: sonnetPct },
+    { name: "Haiku 4.5", key: "haiku", color: "haiku", tokens: modelData.haiku.tokens, cost: modelData.haiku.cost, pct: haikuPct },
+  ].filter(item => (modelChartMode === "cost" ? item.cost : item.tokens) > 0);
+
+  modelLegend.innerHTML = legendItems.map(item => `
+    <div class="model-legend-item">
+      <div class="legend-color ${item.color}"></div>
+      <div class="legend-info">
+        <span class="legend-name">${item.name}</span>
+        <span class="legend-detail">${formatTokens(item.tokens)} tokens</span>
+      </div>
+      <div class="legend-value">
+        ${formatCost(item.cost)}
+        <span class="legend-pct">${Math.round(item.pct * 100)}%</span>
+      </div>
+    </div>
+  `).join("");
+}
+
+// Render all cost charts
+function renderCostCharts(statsArray: DailyStats[]): void {
+  cachedStatsArray = statsArray;
+
+  // Render 7-day cost chart (using last 7 days from array)
+  renderCostLineChart(statsArray);
+
+  // For cumulative, get all days of current month
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthDays: string[] = [];
+  for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
+    monthDays.push(getDateKey(new Date(d)));
+  }
+
+  // Use cached stats for month if available, otherwise use what we have
+  const monthStats = statsArray.filter(s => monthDays.includes(s.date));
+  if (monthStats.length > 0) {
+    renderCumulativeChart(monthStats);
+  }
+
+  // Render model donut using today's breakdown
+  const today = getDateKey(new Date());
+  const todayStats = statsArray.find(s => s.date === today);
+  renderModelDonutChart(todayStats?.modelBreakdown);
+}
+
+// Project breakdown for selected date
 function renderProjectBreakdown(projects: ProjectStats[]): void {
   const listEl = document.getElementById("stats-project-list") as HTMLElement;
 
@@ -830,6 +1243,9 @@ async function refreshStats(): Promise<void> {
 
   // Render weekly chart
   renderWeeklyChart(statsArray);
+
+  // Render cost analytics charts
+  renderCostCharts(statsArray);
 
   // Render project breakdown for selected date
   const projectStats = getProjectStatsForDate(selectedDate, sessionHistory);
@@ -2195,10 +2611,22 @@ function switchTab(tabName: string): void {
     refreshHistory();
   }
 
-  // Refresh stats when switching to stats tab
+  // Sync and refresh stats when switching to stats tab
   if (tabName === "stats") {
-    refreshStats();
+    syncStatsFromServer().then(() => refreshStats());
   }
+}
+
+// Sync stats from server
+async function syncStatsFromServer(): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "SYNC_STATS" }, (response) => {
+      if (response?.success) {
+        console.log("[Claude Blocker] Stats synced from server");
+      }
+      resolve();
+    });
+  });
 }
 
 // Event listeners
@@ -2251,6 +2679,27 @@ document.getElementById("stats-date-picker")?.addEventListener("change", (e) => 
 document.getElementById("stats-today-btn")?.addEventListener("click", () => {
   currentStatsDate = getDateKey(new Date());
   refreshStats();
+});
+
+// Model toggle event listeners
+modelToggleCost?.addEventListener("click", () => {
+  modelChartMode = "cost";
+  modelToggleCost.classList.add("active");
+  modelToggleTokens?.classList.remove("active");
+  // Re-render donut with cached data
+  const today = getDateKey(new Date());
+  const todayStats = cachedStatsArray.find(s => s.date === today);
+  renderModelDonutChart(todayStats?.modelBreakdown);
+});
+
+modelToggleTokens?.addEventListener("click", () => {
+  modelChartMode = "tokens";
+  modelToggleTokens.classList.add("active");
+  modelToggleCost?.classList.remove("active");
+  // Re-render donut with cached data
+  const today = getDateKey(new Date());
+  const todayStats = cachedStatsArray.find(s => s.date === today);
+  renderModelDonutChart(todayStats?.modelBreakdown);
 });
 
 // Session sort event listener
