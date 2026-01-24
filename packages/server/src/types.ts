@@ -1,3 +1,6 @@
+// Import types for local use
+import type { TokenBreakdown } from "@claude-blocker-advanced/shared";
+
 // Re-export shared types
 export type {
   HookPayload,
@@ -5,6 +8,10 @@ export type {
   ServerMessage,
   ClientMessage,
   ToolCall,
+  TokenBreakdown,
+  ModelPricing,
+  DailyStats,
+  HistoricalSession as SharedHistoricalSession,
 } from "@claude-blocker-advanced/shared";
 
 export {
@@ -33,9 +40,24 @@ export interface InternalSession {
   toolCount: number;
   recentTools: InternalToolCall[]; // Last 5 tool calls
   waitingForInputSince?: Date;
-  // Token tracking
+  // Token tracking (detailed breakdown)
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Model tracking
+  model?: string; // Primary model used (e.g., "claude-opus-4-5-20251101")
+  modelBreakdown?: Record<string, TokenBreakdown>; // Per-model token usage
+}
+
+// Tracked subagent (for aggregating subagent tokens)
+export interface TrackedSubagent {
+  id: string;
+  type: string; // "Explore", "Plan", "Bash", etc.
+  startTime: Date;
+  endTime?: Date;
+  tokens?: TokenBreakdown;
+  model?: string;
 }
