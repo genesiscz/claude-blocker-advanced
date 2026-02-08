@@ -73,6 +73,26 @@ const HOOKS_CONFIG = {
       ],
     },
   ],
+  SubagentStart: [
+    {
+      hooks: [
+        {
+          type: "command",
+          command: HOOK_COMMAND,
+        },
+      ],
+    },
+  ],
+  SubagentStop: [
+    {
+      hooks: [
+        {
+          type: "command",
+          command: HOOK_COMMAND,
+        },
+      ],
+    },
+  ],
 };
 
 function setupStatuslineIntegration(): void {
@@ -175,6 +195,8 @@ export function setupHooks(): void {
 │   - Stop (work finished)                              │
 │   - SessionStart (session began)                      │
 │   - SessionEnd (session ended)                        │
+│   - SubagentStart (subagent spawned)                  │
+│   - SubagentStop (subagent completed)                 │
 │                                                       │
 │   Statusline integration:                             │
 │   - Token and cost metrics tracked from statusline    │

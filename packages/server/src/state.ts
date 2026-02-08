@@ -4,6 +4,7 @@ import { homedir } from "os";
 import type { Session, HookPayload, ServerMessage, InternalSession, ToolCall, InternalToolCall, TokenBreakdown, TrackedSubagent } from "./types.js";
 import { SESSION_TIMEOUT_MS, USER_INPUT_TOOLS } from "./types.js";
 import { initializePricing, getPricing, calculateCost, type ModelPricing } from "./price-resolver.js";
+import { loadHistoricalStats, saveHistoricalStats, getDateKey } from "./backfill.js";
 
 // Initialize pricing on module load (non-blocking)
 initializePricing();
@@ -215,6 +216,10 @@ interface HistoricalSession {
   // Model tracking
   model?: string;
   modelBreakdown?: Record<string, TokenBreakdown>;
+  // Time breakdown
+  totalWorkingMs?: number;
+  totalWaitingMs?: number;
+  totalIdleMs?: number;
 }
 
 // Derive project name from cwd or use truncated session ID
@@ -367,6 +372,10 @@ class SessionState {
       existing.costUsd = session.costUsd;
       existing.model = session.model;
       existing.modelBreakdown = session.modelBreakdown;
+      // Time breakdown (cumulative from all runs)
+      existing.totalWorkingMs = session.accumulatedWorkingMs;
+      existing.totalWaitingMs = session.accumulatedWaitingMs;
+      existing.totalIdleMs = session.accumulatedIdleMs;
 
       // Move to front of history (most recent)
       this.persistedData.history.splice(existingIndex, 1);
@@ -396,6 +405,9 @@ class SessionState {
       costUsd: session.costUsd,
       model: session.model,
       modelBreakdown: session.modelBreakdown,
+      totalWorkingMs: session.accumulatedWorkingMs,
+      totalWaitingMs: session.accumulatedWaitingMs,
+      totalIdleMs: session.accumulatedIdleMs,
     };
 
     // Add to beginning of history
@@ -409,6 +421,97 @@ class SessionState {
 
     this.scheduleSave();
     console.log(`[History] Added: ${session.projectName} tokens=${historicalSession.totalTokens} cost=$${historicalSession.costUsd.toFixed(4)}`);
+  }
+
+  // Update daily stats in historical-stats.json when a session ends
+  private updateDailyStatsOnSessionEnd(session: InternalSession, transcriptPath?: string): void {
+    try {
+      const stats = loadHistoricalStats();
+      const dateKey = getDateKey(new Date());
+
+      const existing = stats.dailyStats[dateKey] || {
+        date: dateKey,
+        totalWorkingMs: 0,
+        totalWaitingMs: 0,
+        totalIdleMs: 0,
+        sessionsStarted: 0,
+        sessionsEnded: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCostUsd: 0,
+        modelBreakdown: {},
+      };
+
+      existing.sessionsEnded++;
+      existing.totalWorkingMs += session.accumulatedWorkingMs;
+      existing.totalWaitingMs += session.accumulatedWaitingMs;
+      existing.totalIdleMs += session.accumulatedIdleMs;
+      existing.totalInputTokens += session.inputTokens;
+      existing.totalOutputTokens += session.outputTokens;
+      existing.totalCacheCreationTokens += session.cacheCreationTokens;
+      existing.totalCacheReadTokens += session.cacheReadTokens;
+      existing.totalCostUsd += session.costUsd;
+
+      // Merge model breakdown
+      if (session.modelBreakdown) {
+        if (!existing.modelBreakdown) existing.modelBreakdown = {};
+        for (const [model, tokens] of Object.entries(session.modelBreakdown)) {
+          const m = existing.modelBreakdown[model] || {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationTokens: 0,
+            cacheReadTokens: 0,
+          };
+          m.inputTokens += tokens.inputTokens;
+          m.outputTokens += tokens.outputTokens;
+          m.cacheCreationTokens += tokens.cacheCreationTokens;
+          m.cacheReadTokens += tokens.cacheReadTokens;
+          existing.modelBreakdown[model] = m;
+        }
+      }
+
+      stats.dailyStats[dateKey] = existing;
+
+      // Mark transcript as processed to avoid double-counting in backfill
+      if (transcriptPath) {
+        stats.processedTranscripts[transcriptPath] = true;
+      }
+
+      saveHistoricalStats(stats);
+    } catch (err) {
+      console.error("[DailyStats] Error updating on session end:", err);
+    }
+  }
+
+  // Increment sessionsStarted in daily stats
+  private incrementSessionsStarted(): void {
+    try {
+      const stats = loadHistoricalStats();
+      const dateKey = getDateKey(new Date());
+
+      const existing = stats.dailyStats[dateKey] || {
+        date: dateKey,
+        totalWorkingMs: 0,
+        totalWaitingMs: 0,
+        totalIdleMs: 0,
+        sessionsStarted: 0,
+        sessionsEnded: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCostUsd: 0,
+        modelBreakdown: {},
+      };
+
+      existing.sessionsStarted++;
+      stats.dailyStats[dateKey] = existing;
+      saveHistoricalStats(stats);
+    } catch (err) {
+      console.error("[DailyStats] Error incrementing sessionsStarted:", err);
+    }
   }
 
   // Get session history
@@ -480,6 +583,11 @@ class SessionState {
           costUsd: existingHistoricalSession?.costUsd ?? 0,
           model: existingHistoricalSession?.model,
           modelBreakdown: existingHistoricalSession?.modelBreakdown,
+          // Time tracking
+          lastStatusChangeTime: now,
+          accumulatedWorkingMs: existingHistoricalSession?.totalWorkingMs ?? 0,
+          accumulatedWaitingMs: existingHistoricalSession?.totalWaitingMs ?? 0,
+          accumulatedIdleMs: existingHistoricalSession?.totalIdleMs ?? 0,
         };
 
         this.sessions.set(session_id, newSession);
@@ -487,6 +595,7 @@ class SessionState {
         if (existingHistoricalSession) {
           console.log(`Session resumed: ${newSession.projectName} (${existingHistoricalSession.totalTokens} tokens, $${existingHistoricalSession.costUsd.toFixed(4)} from previous run)`);
         } else {
+          this.incrementSessionsStarted();
           console.log(`Session started: ${getProjectName(initialCwd || payload.cwd, session_id)}`);
         }
         break;
@@ -494,6 +603,8 @@ class SessionState {
 
       case "SessionEnd": {
         const endingSession = this.sessions.get(session_id);
+        // Delete immediately to prevent double-processing by cleanupStaleSessions
+        this.sessions.delete(session_id);
         if (endingSession) {
           // Try to read transcript for accurate token data (synchronous to ensure completion)
           const transcriptPath = payload.transcript_path;
@@ -518,17 +629,37 @@ class SessionState {
               console.error("Error reading transcript:", err);
             }
           }
+          // Finalize time tracking — accumulate remaining time in current state
+          const finalNow = Date.now();
+          const timeInFinalState = finalNow - endingSession.lastStatusChangeTime.getTime();
+          switch (endingSession.status) {
+            case "working":
+              endingSession.accumulatedWorkingMs += timeInFinalState;
+              break;
+            case "waiting_for_input":
+              endingSession.accumulatedWaitingMs += timeInFinalState;
+              break;
+            case "idle":
+              endingSession.accumulatedIdleMs += timeInFinalState;
+              break;
+          }
+
           this.addToHistory(endingSession);
-          console.log(`Session ended: ${endingSession.projectName}`);
+          this.updateDailyStatsOnSessionEnd(endingSession, transcriptPath);
+          console.log(
+            `Session ended: ${endingSession.projectName} ` +
+            `(working=${Math.round(endingSession.accumulatedWorkingMs / 1000)}s ` +
+            `waiting=${Math.round(endingSession.accumulatedWaitingMs / 1000)}s ` +
+            `idle=${Math.round(endingSession.accumulatedIdleMs / 1000)}s)`
+          );
         }
-        this.sessions.delete(session_id);
         break;
       }
 
       case "UserPromptSubmit": {
         this.ensureSession(session_id, payload.cwd);
         const promptSession = this.sessions.get(session_id)!;
-        promptSession.status = "working";
+        this.trackStateTransition(promptSession, "working");
         promptSession.waitingForInputSince = undefined;
         promptSession.lastActivity = new Date();
         this.accumulateTokens(promptSession, payload);
@@ -555,17 +686,17 @@ class SessionState {
 
         // Check if this is a user input tool
         if (payload.tool_name && USER_INPUT_TOOLS.includes(payload.tool_name)) {
-          toolSession.status = "waiting_for_input";
+          this.trackStateTransition(toolSession, "waiting_for_input");
           toolSession.waitingForInputSince = new Date();
         } else if (toolSession.status === "waiting_for_input") {
           // If waiting for input, only reset after 500ms (to ignore immediate tool calls like Edit)
           const elapsed = Date.now() - (toolSession.waitingForInputSince?.getTime() ?? 0);
           if (elapsed > 500) {
-            toolSession.status = "working";
+            this.trackStateTransition(toolSession, "working");
             toolSession.waitingForInputSince = undefined;
           }
         } else {
-          toolSession.status = "working";
+          this.trackStateTransition(toolSession, "working");
         }
         toolSession.lastActivity = new Date();
         this.accumulateTokens(toolSession, payload);
@@ -588,11 +719,11 @@ class SessionState {
           // If waiting for input, only reset after 500ms (to ignore immediate Stop after AskUserQuestion)
           const elapsed = Date.now() - (idleSession.waitingForInputSince?.getTime() ?? 0);
           if (elapsed > 500) {
-            idleSession.status = "idle";
+            this.trackStateTransition(idleSession, "idle");
             idleSession.waitingForInputSince = undefined;
           }
         } else {
-          idleSession.status = "idle";
+          this.trackStateTransition(idleSession, "idle");
         }
         idleSession.lastActivity = new Date();
         // Stop event may contain final token counts
@@ -729,9 +860,40 @@ class SessionState {
         cacheReadTokens: 0,
         totalTokens: 0,
         costUsd: 0,
+        lastStatusChangeTime: now,
+        accumulatedWorkingMs: 0,
+        accumulatedWaitingMs: 0,
+        accumulatedIdleMs: 0,
       });
       console.log(`Session connected: ${getProjectName(initialCwd || cwd, sessionId)}`);
     }
+  }
+
+  // Track state transition and accumulate time spent in previous state
+  private trackStateTransition(
+    session: InternalSession,
+    newStatus: "idle" | "working" | "waiting_for_input"
+  ): void {
+    const now = Date.now();
+    const previousStatus = session.status;
+    if (previousStatus === newStatus) return;
+
+    const timeInPrevious = now - session.lastStatusChangeTime.getTime();
+
+    switch (previousStatus) {
+      case "working":
+        session.accumulatedWorkingMs += timeInPrevious;
+        break;
+      case "waiting_for_input":
+        session.accumulatedWaitingMs += timeInPrevious;
+        break;
+      case "idle":
+        session.accumulatedIdleMs += timeInPrevious;
+        break;
+    }
+
+    session.status = newStatus;
+    session.lastStatusChangeTime = new Date(now);
   }
 
   // Accumulate token counts from hook payload
@@ -759,8 +921,22 @@ class SessionState {
 
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity.getTime() > SESSION_TIMEOUT_MS) {
+        // Finalize time tracking before adding to history
+        const timeInFinalState = now - session.lastStatusChangeTime.getTime();
+        switch (session.status) {
+          case "working":
+            session.accumulatedWorkingMs += timeInFinalState;
+            break;
+          case "waiting_for_input":
+            session.accumulatedWaitingMs += timeInFinalState;
+            break;
+          case "idle":
+            session.accumulatedIdleMs += timeInFinalState;
+            break;
+        }
         // Add to history before removing
         this.addToHistory(session);
+        this.updateDailyStatsOnSessionEnd(session);
         console.log(`Session timed out: ${session.projectName}`);
         this.sessions.delete(id);
         removed++;

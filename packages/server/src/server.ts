@@ -147,6 +147,12 @@ export function startServer(port: number = DEFAULT_PORT): void {
 
         logHook(payload);
         state.handleHook(payload);
+
+        // Broadcast updated stats when sessions start or end
+        if (payload.hook_event_name === "SessionStart" || payload.hook_event_name === "SessionEnd") {
+          broadcastStatsUpdate();
+        }
+
         sendJson(res, { ok: true });
       } catch {
         sendJson(res, { error: "Invalid JSON" }, 400);
@@ -520,10 +526,10 @@ export function startServer(port: number = DEFAULT_PORT): void {
       runBackfill((progress) => {
         lastBackfillProgress = progress;
         if (progress.status === "processing") {
-          // Only log every 10 files to avoid spam
-          if (progress.processedFiles % 10 === 0 || progress.processedFiles === progress.totalFiles) {
+          // Only log every 100 files to avoid spam
+          if (progress.scannedFiles % 100 === 0 || progress.scannedFiles === progress.totalFiles) {
             console.log(
-              `[Backfill] Progress: ${progress.processedFiles}/${progress.totalFiles} files`
+              `[Backfill] Scanned ${progress.scannedFiles}/${progress.totalFiles} (${progress.processedFiles} new, ${progress.skippedFiles} skipped)`
             );
           }
         }

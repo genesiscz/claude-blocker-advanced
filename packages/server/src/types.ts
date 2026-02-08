@@ -50,6 +50,11 @@ export interface InternalSession {
   // Model tracking
   model?: string; // Primary model used (e.g., "claude-opus-4-5-20251101")
   modelBreakdown?: Record<string, TokenBreakdown>; // Per-model token usage
+  // Time tracking for productivity stats
+  lastStatusChangeTime: Date;
+  accumulatedWorkingMs: number;
+  accumulatedWaitingMs: number;
+  accumulatedIdleMs: number;
 }
 
 // Tracked subagent (for aggregating subagent tokens)

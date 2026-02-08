@@ -1,6 +1,6 @@
 {
   "name": "claude-blocker-advanced",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Block distracting websites unless Claude Code is actively running inference. Fork of Theo's claude-blocker with advanced features.",
   "author": "Martin Krizan",
   "repository": {
@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsup src/bin.ts src/server.ts --format esm --dts --clean",
     "dev": "tsx src/bin.ts",
+    "setup": "tsx src/bin.ts --setup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

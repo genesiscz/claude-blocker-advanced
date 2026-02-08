@@ -7,6 +7,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
+    "setup": "pnpm -r --filter claude-blocker-advanced run setup",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

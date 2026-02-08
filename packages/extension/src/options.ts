@@ -2629,6 +2629,13 @@ async function syncStatsFromServer(): Promise<void> {
   });
 }
 
+// Set version from manifest
+const manifestVersion = chrome.runtime.getManifest().version;
+const appVersionEl = document.getElementById("app-version");
+const aboutVersionEl = document.getElementById("about-version");
+if (appVersionEl) appVersionEl.textContent = `v${manifestVersion}`;
+if (aboutVersionEl) aboutVersionEl.textContent = `Version ${manifestVersion}`;
+
 // Event listeners
 addForm.addEventListener("submit", (e) => {
   e.preventDefault();

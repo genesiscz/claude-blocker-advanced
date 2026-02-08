@@ -14,7 +14,9 @@ export type BackfillProgressCallback = (progress: BackfillProgress) => void;
 
 export interface BackfillProgress {
   totalFiles: number;
-  processedFiles: number;
+  scannedFiles: number; // Total files scanned so far
+  processedFiles: number; // Files actually parsed (new)
+  skippedFiles: number; // Files skipped (already processed)
   currentFile?: string;
   status: "scanning" | "processing" | "complete" | "error";
   error?: string;
@@ -215,7 +217,7 @@ function parseTranscript(transcriptPath: string): TranscriptParseResult | null {
 /**
  * Get date key (YYYY-MM-DD) from a Date
  */
-function getDateKey(date: Date): string {
+export function getDateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -260,7 +262,7 @@ function findTranscriptFiles(): string[] {
 /**
  * Load existing historical stats
  */
-function loadHistoricalStats(): HistoricalStatsData {
+export function loadHistoricalStats(): HistoricalStatsData {
   try {
     if (existsSync(HISTORICAL_STATS_FILE)) {
       const raw = readFileSync(HISTORICAL_STATS_FILE, "utf-8");
@@ -281,7 +283,7 @@ function loadHistoricalStats(): HistoricalStatsData {
 /**
  * Save historical stats
  */
-function saveHistoricalStats(data: HistoricalStatsData): void {
+export function saveHistoricalStats(data: HistoricalStatsData): void {
   try {
     if (!existsSync(DATA_DIR)) {
       mkdirSync(DATA_DIR, { recursive: true });
@@ -359,7 +361,9 @@ export async function runBackfill(
 ): Promise<HistoricalStatsData> {
   const progress: BackfillProgress = {
     totalFiles: 0,
+    scannedFiles: 0,
     processedFiles: 0,
+    skippedFiles: 0,
     status: "scanning",
   };
 
@@ -391,14 +395,18 @@ export async function runBackfill(
     const batch = transcripts.slice(i, i + batchSize);
 
     for (const transcriptPath of batch) {
-      progress.processedFiles++;
+      progress.scannedFiles++;
       progress.currentFile = path.basename(transcriptPath);
-      onProgress?.(progress);
 
       // Skip if already processed
       if (stats.processedTranscripts[transcriptPath]) {
+        progress.skippedFiles++;
+        onProgress?.(progress);
         continue;
       }
+
+      // Report progress for new file being processed
+      onProgress?.(progress);
 
       // Get file modification time to determine date
       let dateKey: string;
@@ -426,6 +434,7 @@ export async function runBackfill(
       mergeIntoDailyStats(stats, dateKey, result);
       stats.processedTranscripts[transcriptPath] = true;
 
+      progress.processedFiles++;
       newFilesProcessed++;
       totalTokensFound += result.totalTokens;
       totalCostFound += result.costUsd;

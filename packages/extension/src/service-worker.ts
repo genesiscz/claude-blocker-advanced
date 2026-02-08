@@ -247,10 +247,10 @@ async function syncRecentStats(): Promise<void> {
       return;
     }
 
-    // Save each day's stats to local storage
+    // Merge each day's server stats with local data (preserves extension-tracked time)
     for (const stats of statsArray) {
       if (stats?.date) {
-        await saveDailyStats(stats);
+        await mergeServerStats(stats);
       }
     }
 
@@ -270,8 +270,8 @@ async function fetchStatsFromServer(date: string): Promise<DailyStats | null> {
 
     const data = await response.json();
     if (data?.stats) {
-      // Save to local storage as cache
-      await saveDailyStats(data.stats);
+      // Merge with local storage to preserve extension-tracked time
+      await mergeServerStats(data.stats);
       return data.stats;
     }
   } catch {
@@ -332,6 +332,30 @@ async function loadDailyStats(date: string): Promise<DailyStats> {
 async function saveDailyStats(stats: DailyStats): Promise<void> {
   const key = getStatsStorageKey(stats.date);
   await chrome.storage.local.set({ [key]: stats });
+}
+
+// Merge server stats with local data — trust server when it has time data, fall back to local otherwise
+async function mergeServerStats(serverStats: DailyStats): Promise<void> {
+  const hasServerTimeData = (serverStats.totalWorkingMs ?? 0) > 0 ||
+                             (serverStats.totalWaitingMs ?? 0) > 0 ||
+                             (serverStats.totalIdleMs ?? 0) > 0 ||
+                             (serverStats.sessionsStarted ?? 0) > 0;
+
+  if (hasServerTimeData) {
+    // Server has real tracking data — use it directly
+    await saveDailyStats(serverStats);
+  } else {
+    // Server has zeros — preserve extension-tracked values
+    const localStats = await loadDailyStats(serverStats.date);
+    const merged: DailyStats = {
+      ...serverStats,
+      totalWorkingMs: localStats.totalWorkingMs,
+      totalWaitingMs: localStats.totalWaitingMs,
+      totalIdleMs: localStats.totalIdleMs,
+      sessionsStarted: localStats.sessionsStarted,
+    };
+    await saveDailyStats(merged);
+  }
 }
 
 // Load session history from storage
@@ -874,11 +898,11 @@ function connect() {
 
         // Handle stats update from server
         if (msg.type === "stats_update") {
-          // Store the server stats for the day
+          // Merge server stats with local data (keep higher values to avoid losing extension-tracked time)
           const serverStats = msg.dailyStats as DailyStats;
           if (serverStats?.date) {
-            saveDailyStats(serverStats).catch((err) => {
-              console.error("[Claude Blocker Advanced] Failed to save server stats:", err);
+            mergeServerStats(serverStats).catch((err) => {
+              console.error("[Claude Blocker Advanced] Failed to merge server stats:", err);
             });
           }
           // Broadcast stats update to any listening tabs
