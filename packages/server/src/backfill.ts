@@ -44,8 +44,14 @@ interface TranscriptEntry {
   requestId?: string;
   timestamp?: string;
   message?: {
+    role?: string;
     model?: string;
     usage?: TranscriptUsage;
+    stop_reason?: string | null;
+    content?: Array<{
+      type?: string;
+      name?: string;
+    }>;
   };
 }
 
@@ -69,6 +75,9 @@ interface TranscriptParseResult {
   modelBreakdown: Record<string, TokenBreakdown>;
   firstTimestamp?: Date;
   lastTimestamp?: Date;
+  totalWorkingMs: number;
+  totalWaitingMs: number;
+  totalIdleMs: number;
 }
 
 /**
@@ -78,6 +87,13 @@ function parseTranscript(transcriptPath: string): TranscriptParseResult | null {
   const requestUsage = new Map<string, RequestUsage>();
   let firstTimestamp: Date | undefined;
   let lastTimestamp: Date | undefined;
+
+  // Time reconstruction state machine
+  let currentState: "idle" | "working" | "waiting_for_input" = "idle";
+  let lastTransitionTime: number | undefined;
+  let totalWorkingMs = 0;
+  let totalWaitingMs = 0;
+  let totalIdleMs = 0;
 
   try {
     const content = readFileSync(transcriptPath, "utf-8");
@@ -98,6 +114,54 @@ function parseTranscript(transcriptPath: string): TranscriptParseResult | null {
           if (!lastTimestamp || ts > lastTimestamp) {
             lastTimestamp = ts;
           }
+        }
+
+        // --- Time reconstruction ---
+        const entryTime = entry.timestamp ? new Date(entry.timestamp).getTime() : undefined;
+
+        if (entry.type === "user" && entry.message?.role === "user" && entryTime) {
+          // Check if this is an actual user prompt (has text content) vs tool results
+          const hasTextContent = entry.message.content?.some(
+            (c) => c.type === "text"
+          );
+
+          if (hasTextContent && currentState !== "working") {
+            // User typed a prompt → transition to working
+            if (lastTransitionTime) {
+              const duration = entryTime - lastTransitionTime;
+              if (currentState === "idle") totalIdleMs += duration;
+              else if (currentState === "waiting_for_input") totalWaitingMs += duration;
+            }
+            currentState = "working";
+            lastTransitionTime = entryTime;
+          } else if (!lastTransitionTime) {
+            // First event in transcript — set baseline
+            lastTransitionTime = entryTime;
+            currentState = "working";
+          }
+        }
+
+        if (entry.type === "assistant" && entry.message?.role === "assistant" && entryTime) {
+          const hasAskUser = entry.message.content?.some(
+            (c) => c.type === "tool_use" && c.name === "AskUserQuestion"
+          );
+
+          if (hasAskUser) {
+            // AskUserQuestion → transition to waiting_for_input
+            if (lastTransitionTime && currentState === "working") {
+              totalWorkingMs += entryTime - lastTransitionTime;
+            }
+            currentState = "waiting_for_input";
+            lastTransitionTime = entryTime;
+          } else if (entry.message.stop_reason !== "tool_use") {
+            // Final response (no pending tools) → transition to idle
+            if (lastTransitionTime && currentState === "working") {
+              totalWorkingMs += entryTime - lastTransitionTime;
+            }
+            currentState = "idle";
+            lastTransitionTime = entryTime;
+          }
+          // If stop_reason === "tool_use" (not AskUserQuestion), stay working
         }
 
         // Process assistant messages with usage data
@@ -211,6 +275,9 @@ function parseTranscript(transcriptPath: string): TranscriptParseResult | null {
     modelBreakdown,
     firstTimestamp,
     lastTimestamp,
+    totalWorkingMs,
+    totalWaitingMs,
+    totalIdleMs,
   };
 }
 
@@ -318,7 +385,11 @@ function mergeIntoDailyStats(
     modelBreakdown: {},
   };
 
+  existing.sessionsStarted++;
   existing.sessionsEnded++;
+  existing.totalWorkingMs += result.totalWorkingMs;
+  existing.totalWaitingMs += result.totalWaitingMs;
+  existing.totalIdleMs += result.totalIdleMs;
   existing.totalInputTokens += result.inputTokens;
   existing.totalOutputTokens += result.outputTokens;
   existing.totalCacheCreationTokens += result.cacheCreationTokens;
@@ -384,6 +455,15 @@ export async function runBackfill(
 
   // Load existing stats
   const stats = loadHistoricalStats();
+
+  // Version 2 adds time reconstruction — force re-process all transcripts
+  if (stats.version < 2) {
+    console.log("[Backfill] Upgrading to v2 (time reconstruction) — re-processing all transcripts");
+    stats.processedTranscripts = {};
+    stats.dailyStats = {};
+    stats.version = 2;
+  }
+
   progress.status = "processing";
 
   // Process in batches to avoid blocking

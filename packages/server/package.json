@@ -5,7 +5,7 @@
   "author": "Martin Krizan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/genesiscz/claude-blocker-advanced.git"
+    "url": "git+https://github.com/genesiscz/claude-blocker-advanced.git"
   },
   "homepage": "https://github.com/genesiscz/claude-blocker-advanced",
   "bugs": {
@@ -13,7 +13,7 @@
   },
   "type": "module",
   "bin": {
-    "claude-blocker-advanced": "./dist/bin.js"
+    "claude-blocker-advanced": "dist/bin.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
