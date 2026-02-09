@@ -584,10 +584,12 @@ function getModelBadgeClass(modelName: string): string {
 // Format model name for display
 function formatModelName(modelName: string): string {
   // Extract the model type from full model ID
-  // e.g., "claude-opus-4-5-20251101" -> "Opus 4.5"
+  // e.g., "claude-opus-4-6" -> "Opus 4.6"
   const lower = modelName.toLowerCase();
+  if (lower.includes("opus-4-6") || lower.includes("opus-4.6")) return "Opus 4.6";
   if (lower.includes("opus-4-5") || lower.includes("opus-4.5")) return "Opus 4.5";
   if (lower.includes("opus-4")) return "Opus 4";
+  if (lower.includes("sonnet-4-5") || lower.includes("sonnet-4.5")) return "Sonnet 4.5";
   if (lower.includes("sonnet-4")) return "Sonnet 4";
   if (lower.includes("sonnet-3-5") || lower.includes("sonnet-3.5")) return "Sonnet 3.5";
   if (lower.includes("haiku-4-5") || lower.includes("haiku-4.5")) return "Haiku 4.5";
@@ -1118,9 +1120,9 @@ function renderModelDonutChart(modelBreakdown: Record<string, {inputTokens: numb
 
   // Render legend
   const legendItems = [
-    { name: "Opus 4.5", key: "opus", color: "opus", tokens: modelData.opus.tokens, cost: modelData.opus.cost, pct: opusPct },
-    { name: "Sonnet 4", key: "sonnet", color: "sonnet", tokens: modelData.sonnet.tokens, cost: modelData.sonnet.cost, pct: sonnetPct },
-    { name: "Haiku 4.5", key: "haiku", color: "haiku", tokens: modelData.haiku.tokens, cost: modelData.haiku.cost, pct: haikuPct },
+    { name: "Opus", key: "opus", color: "opus", tokens: modelData.opus.tokens, cost: modelData.opus.cost, pct: opusPct },
+    { name: "Sonnet", key: "sonnet", color: "sonnet", tokens: modelData.sonnet.tokens, cost: modelData.sonnet.cost, pct: sonnetPct },
+    { name: "Haiku", key: "haiku", color: "haiku", tokens: modelData.haiku.tokens, cost: modelData.haiku.cost, pct: haikuPct },
   ].filter(item => (modelChartMode === "cost" ? item.cost : item.tokens) > 0);
 
   modelLegend.innerHTML = legendItems.map(item => `
@@ -1159,10 +1161,9 @@ function renderCostCharts(statsArray: DailyStats[]): void {
     renderCumulativeChart(monthStats);
   }
 
-  // Render model donut using today's breakdown
-  const today = getDateKey(new Date());
-  const todayStats = statsArray.find(s => s.date === today);
-  renderModelDonutChart(todayStats?.modelBreakdown);
+  // Render model donut using selected date's breakdown
+  const selectedDateStats = statsArray.find(s => s.date === currentStatsDate);
+  renderModelDonutChart(selectedDateStats?.modelBreakdown);
 }
 
 // Project breakdown for selected date
