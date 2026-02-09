@@ -20,6 +20,7 @@ interface Session {
   costUsd?: number;
   // Model tracking
   model?: string;
+  modelBreakdown?: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }>;
   // Recent tool calls
   recentTools?: Array<{
     name: string;
@@ -74,6 +75,7 @@ interface HistoricalSession {
   costUsd?: number;
   // Model tracking
   model?: string;
+  modelBreakdown?: Record<string, { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number }>;
 }
 
 interface NotificationConfig {
@@ -255,8 +257,58 @@ async function syncRecentStats(): Promise<void> {
     }
 
     console.log(`[Claude Blocker Advanced] Synced ${statsArray.length} days of stats from server`);
+
+    // Also sync session history for project breakdown
+    await syncSessionHistory();
   } catch (err) {
     console.log("[Claude Blocker Advanced] Error syncing stats:", err);
+  }
+}
+
+// Sync session history from server
+async function syncSessionHistory(): Promise<void> {
+  if (!state.serverConnected) return;
+
+  try {
+    const response = await fetch(`${SERVER_URL}/history`);
+    if (!response.ok) {
+      console.log("[Claude Blocker Advanced] Failed to sync session history:", response.status);
+      return;
+    }
+
+    const data = await response.json();
+    const serverHistory: HistoricalSession[] = data?.history ?? [];
+    if (!Array.isArray(serverHistory) || serverHistory.length === 0) return;
+
+    const localHistory = await loadSessionHistory();
+    const localIds = new Set(localHistory.map((h: HistoricalSession) => h.id));
+
+    // Add server sessions that aren't in local storage
+    let added = 0;
+    for (const session of serverHistory) {
+      if (!localIds.has(session.id)) {
+        localHistory.push(session);
+        added++;
+      }
+    }
+
+    if (added > 0) {
+      // Sort by endTime descending (most recent first)
+      localHistory.sort((a: HistoricalSession, b: HistoricalSession) =>
+        new Date(b.endTime).getTime() - new Date(a.endTime).getTime()
+      );
+
+      // Clean up old entries (older than 7 days)
+      const cutoffTime = Date.now() - SESSION_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+      const filtered = localHistory.filter((h: HistoricalSession) =>
+        new Date(h.endTime).getTime() > cutoffTime
+      );
+
+      await saveSessionHistory(filtered);
+      console.log(`[Claude Blocker Advanced] Synced ${added} sessions from server history`);
+    }
+  } catch (err) {
+    console.log("[Claude Blocker Advanced] Error syncing session history:", err);
   }
 }
 
@@ -402,6 +454,9 @@ async function addSessionToHistory(
     // Include token and cost data
     totalTokens: session.totalTokens ?? 0,
     costUsd: session.costUsd ?? 0,
+    // Include model tracking
+    model: session.model,
+    modelBreakdown: session.modelBreakdown,
   };
 
   const history = await loadSessionHistory();
