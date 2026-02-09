@@ -470,6 +470,9 @@ export async function runBackfill(
   let newFilesProcessed = 0;
   let totalTokensFound = 0;
   let totalCostFound = 0;
+  let totalWorkingFound = 0;
+  let totalWaitingFound = 0;
+  let totalIdleFound = 0;
 
   for (let i = 0; i < transcripts.length; i += batchSize) {
     const batch = transcripts.slice(i, i + batchSize);
@@ -518,6 +521,9 @@ export async function runBackfill(
       newFilesProcessed++;
       totalTokensFound += result.totalTokens;
       totalCostFound += result.costUsd;
+      totalWorkingFound += result.totalWorkingMs;
+      totalWaitingFound += result.totalWaitingMs;
+      totalIdleFound += result.totalIdleMs;
     }
 
     // Delay between batches to avoid blocking
@@ -532,8 +538,9 @@ export async function runBackfill(
   progress.status = "complete";
   onProgress?.(progress);
 
+  const fmtMin = (ms: number) => (ms / 60000).toFixed(1);
   console.log(
-    `[Backfill] Complete: processed ${newFilesProcessed} new files, ${totalTokensFound} tokens, $${totalCostFound.toFixed(4)} total cost`
+    `[Backfill] Complete: processed ${newFilesProcessed} new files, ${totalTokensFound} tokens, $${totalCostFound.toFixed(4)} total cost, working=${fmtMin(totalWorkingFound)}m waiting=${fmtMin(totalWaitingFound)}m idle=${fmtMin(totalIdleFound)}m`
   );
 
   return stats;
@@ -583,6 +590,12 @@ export function getDailyStatsRange(dateKeys: string[]): DailyStats[] {
  */
 export function needsBackfill(): boolean {
   const stats = loadHistoricalStats();
+
+  // Force re-backfill if version upgrade is needed
+  if (stats.version < 2) {
+    return true;
+  }
+
   if (!stats.lastBackfill) {
     return true;
   }

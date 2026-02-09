@@ -33,6 +33,7 @@ Options:
   --setup     Configure Claude Code hooks
   --remove    Remove Claude Code hooks
   --port      Server port (default: ${DEFAULT_PORT})
+  --backfill  Force backfill on startup even if already done today
   --help      Show this help message
 
 Examples:
@@ -84,7 +85,8 @@ async function main(): Promise<void> {
     }
   }
 
-  startServer(port);
+  const forceBackfill = args.includes("--backfill");
+  startServer(port, forceBackfill);
 }
 
 main();
