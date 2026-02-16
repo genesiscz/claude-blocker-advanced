@@ -384,20 +384,8 @@
                 <p class="section-desc">Daily Claude usage by status</p>
               </div>
             </div>
-
-            <div class="stats-chart-container">
-              <div class="stats-chart" id="stats-weekly-chart">
-                <!-- Bars will be rendered by JS -->
-              </div>
-              <div class="stats-chart-labels" id="stats-chart-labels">
-                <!-- Labels will be rendered by JS -->
-              </div>
-            </div>
-
-            <div class="stats-chart-legend">
-              <span class="stats-legend-item"><span class="stats-legend-dot working"></span>Working</span>
-              <span class="stats-legend-item"><span class="stats-legend-dot waiting"></span>Waiting</span>
-              <span class="stats-legend-item"><span class="stats-legend-dot idle"></span>Idle</span>
+            <div class="stats-chart-container" style="height: 220px;">
+              <canvas id="weekly-chartjs"></canvas>
             </div>
           </section>
 

@@ -1,4 +1,5 @@
 import { executeSessionAction } from "../../shared/src/actions.js";
+import { Chart, COLORS } from "./chart-theme.js";
 
 export {};
 
@@ -286,8 +287,6 @@ const statsSessionsEnded = document.getElementById("stats-sessions-ended") as HT
 const ringWorking = document.getElementById("ring-working") as SVGCircleElement;
 const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
 const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
-const statsWeeklyChart = document.getElementById("stats-weekly-chart") as HTMLElement;
-const statsChartLabels = document.getElementById("stats-chart-labels") as HTMLElement;
 const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
 const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
 const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
@@ -338,6 +337,7 @@ const modelToggleTokens = document.getElementById("model-toggle-tokens") as HTML
 // Chart state
 let modelChartMode: "cost" | "tokens" = "cost";
 let cachedStatsArray: DailyStats[] = [];
+let weeklyChartInstance: Chart | null = null;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -741,52 +741,101 @@ function renderRingChart(stats: DailyStats): void {
 
 // Render the weekly chart
 function renderWeeklyChart(statsArray: DailyStats[]): void {
-  // Find max total for scaling
-  let maxTotal = 0;
-  for (const stats of statsArray) {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    if (total > maxTotal) maxTotal = total;
-  }
-
-  // If no data, show at least some height
-  if (maxTotal === 0) maxTotal = 1;
+  const canvas = document.getElementById("weekly-chartjs") as HTMLCanvasElement | null;
+  if (!canvas) return;
 
   const today = getDateKey(new Date());
+  const labels = statsArray.map(s => {
+    const label = getShortDayName(s.date);
+    return s.date === today ? `${label} *` : label;
+  });
 
-  // Generate bars HTML
-  const barsHtml = statsArray.map((stats) => {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    const totalPct = (total / maxTotal) * 100;
+  const workingData = statsArray.map(s => Math.round(s.totalWorkingMs / 60000));
+  const waitingData = statsArray.map(s => Math.round(s.totalWaitingMs / 60000));
+  const idleData = statsArray.map(s => Math.round(s.totalIdleMs / 60000));
 
-    // Calculate segment heights relative to bar height
-    const workingPct = total > 0 ? (stats.totalWorkingMs / total) * totalPct : 0;
-    const waitingPct = total > 0 ? (stats.totalWaitingMs / total) * totalPct : 0;
-    const idlePct = total > 0 ? (stats.totalIdleMs / total) * totalPct : 0;
+  const config = {
+    type: 'bar' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Working',
+          data: workingData,
+          backgroundColor: COLORS.workingAlpha,
+          borderColor: COLORS.working,
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false as const,
+        },
+        {
+          label: 'Waiting',
+          data: waitingData,
+          backgroundColor: COLORS.waitingAlpha,
+          borderColor: COLORS.waiting,
+          borderWidth: 1,
+          borderRadius: 0,
+          borderSkipped: false as const,
+        },
+        {
+          label: 'Idle',
+          data: idleData,
+          backgroundColor: COLORS.idleAlpha,
+          borderColor: COLORS.idle,
+          borderWidth: 1,
+          borderRadius: 0,
+          borderSkipped: false as const,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: {
+          stacked: true,
+          grid: { display: false },
+        },
+        y: {
+          stacked: true,
+          ticks: {
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 60) return `${Math.round(v / 60)}h`;
+              return `${Math.round(v)}m`;
+            },
+          },
+        },
+      },
+      plugins: {
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) => {
+              const val = ctx.parsed.y;
+              const name = ctx.dataset.label ?? '';
+              if (val >= 60) {
+                const h = Math.floor(val / 60);
+                const m = Math.round(val % 60);
+                return m > 0 ? `${name}: ${h}h ${m}m` : `${name}: ${h}h`;
+              }
+              return `${name}: ${Math.round(val)}m`;
+            },
+          },
+        },
+        legend: {
+          position: 'top' as const,
+          align: 'end' as const,
+        },
+      },
+    },
+  };
 
-    const tooltipText = total > 0
-      ? `${formatStatsDuration(total)} total`
-      : "No data";
-
-    return `
-      <div class="stats-chart-bar">
-        <div class="stats-bar-tooltip">${tooltipText}</div>
-        <div class="stats-bar-segment idle" style="height: ${idlePct}%"></div>
-        <div class="stats-bar-segment waiting" style="height: ${waitingPct}%"></div>
-        <div class="stats-bar-segment working" style="height: ${workingPct}%"></div>
-      </div>
-    `;
-  }).join("");
-
-  statsWeeklyChart.innerHTML = barsHtml;
-
-  // Generate labels HTML
-  const labelsHtml = statsArray.map((stats) => {
-    const isToday = stats.date === today;
-    const label = getShortDayName(stats.date);
-    return `<span class="stats-chart-label ${isToday ? "today" : ""}">${label}</span>`;
-  }).join("");
-
-  statsChartLabels.innerHTML = labelsHtml;
+  if (weeklyChartInstance) {
+    weeklyChartInstance.data = config.data;
+    weeklyChartInstance.update();
+  } else {
+    weeklyChartInstance = new Chart(canvas, config);
+  }
 }
 
 // Chart constants
