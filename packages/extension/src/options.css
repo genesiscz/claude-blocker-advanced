@@ -2683,6 +2683,12 @@ footer p {
   width: 100%;
 }
 
+/* Chart.js canvas containers */
+.stats-chart-container canvas,
+.chart-line-container canvas {
+  max-width: 100%;
+}
+
 /* Model Donut Chart */
 .model-chart-card {
   display: flex;
