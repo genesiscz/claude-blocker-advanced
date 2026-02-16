@@ -838,9 +838,10 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
     chart: {
       ...getBaseChartOptions().chart,
       type: 'area',
-      height: 200,
+      height: 220,
       toolbar: {
         show: true,
+        offsetY: -8,
         tools: {
           download: false,
           selection: false,
@@ -888,7 +889,12 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
       ...getBaseChartOptions().yaxis,
       labels: {
         ...(getBaseChartOptions().yaxis as ApexYAxis)?.labels,
-        formatter: (val: number) => formatCost(val),
+        formatter: (val: number) => {
+          if (val >= 1000) return `$${(val / 1000).toFixed(1)}K`;
+          if (val >= 1) return `$${Math.round(val)}`;
+          if (val > 0) return `${Math.round(val * 100)}¢`;
+          return '$0';
+        },
       },
     },
     tooltip: {
@@ -952,9 +958,10 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
     chart: {
       ...getBaseChartOptions().chart,
       type: 'line',
-      height: 220,
+      height: 260,
       toolbar: {
         show: true,
+        offsetY: -8,
         tools: {
           download: false,
           selection: false,
@@ -1006,7 +1013,12 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
       ...getBaseChartOptions().yaxis,
       labels: {
         ...(getBaseChartOptions().yaxis as ApexYAxis)?.labels,
-        formatter: (val: number) => formatCost(val),
+        formatter: (val: number) => {
+          if (val >= 1000) return `$${(val / 1000).toFixed(1)}K`;
+          if (val >= 1) return `$${Math.round(val)}`;
+          if (val > 0) return `${Math.round(val * 100)}¢`;
+          return '$0';
+        },
       },
     },
     tooltip: {
@@ -1023,7 +1035,8 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
     },
     legend: {
       position: 'top',
-      horizontalAlign: 'right',
+      horizontalAlign: 'left',
+      offsetY: -4,
       labels: { colors: 'rgba(255,255,255,0.7)' },
       fontSize: '11px',
       fontFamily: "'DM Mono', monospace",
