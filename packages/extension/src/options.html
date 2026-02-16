@@ -279,30 +279,8 @@
                 <span class="chart-title">7-Day Cost Trend</span>
                 <span class="chart-total" id="chart-7day-total">$0.00</span>
               </div>
-              <div class="chart-line-container" id="cost-line-chart">
-                <svg class="chart-svg" viewBox="0 0 640 180" preserveAspectRatio="xMidYMid meet">
-                  <defs>
-                    <linearGradient id="costGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stop-color="#FFD700" stop-opacity="0.4"/>
-                      <stop offset="100%" stop-color="#FFD700" stop-opacity="0"/>
-                    </linearGradient>
-                    <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stop-color="#B8860B"/>
-                      <stop offset="50%" stop-color="#FFD700"/>
-                      <stop offset="100%" stop-color="#FFA500"/>
-                    </linearGradient>
-                  </defs>
-                  <!-- Grid lines -->
-                  <g class="chart-grid" id="cost-chart-grid"></g>
-                  <!-- Area fill -->
-                  <path class="chart-area" id="cost-chart-area" fill="url(#costGradient)"/>
-                  <!-- Line -->
-                  <path class="chart-line" id="cost-chart-line" stroke="url(#lineGradient)" fill="none" stroke-width="2.5"/>
-                  <!-- Data points -->
-                  <g class="chart-dots" id="cost-chart-dots"></g>
-                </svg>
-                <div class="chart-x-axis" id="cost-chart-x-axis"></div>
-                <div class="chart-tooltip" id="cost-chart-tooltip"></div>
+              <div class="chart-line-container">
+                <div id="cost-apex-chart"></div>
               </div>
             </div>
 
