@@ -1,4 +1,6 @@
 import { executeSessionAction } from "../../shared/src/actions.js";
+import ApexCharts from "apexcharts";
+import { getBaseChartOptions, COLORS } from "./chart-theme.js";
 
 export {};
 
@@ -286,8 +288,6 @@ const statsSessionsEnded = document.getElementById("stats-sessions-ended") as HT
 const ringWorking = document.getElementById("ring-working") as SVGCircleElement;
 const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
 const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
-const statsWeeklyChart = document.getElementById("stats-weekly-chart") as HTMLElement;
-const statsChartLabels = document.getElementById("stats-chart-labels") as HTMLElement;
 const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
 const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
 const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
@@ -338,6 +338,7 @@ const modelToggleTokens = document.getElementById("model-toggle-tokens") as HTML
 // Chart state
 let modelChartMode: "cost" | "tokens" = "cost";
 let cachedStatsArray: DailyStats[] = [];
+let weeklyChart: ApexCharts | null = null;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -741,52 +742,88 @@ function renderRingChart(stats: DailyStats): void {
 
 // Render the weekly chart
 function renderWeeklyChart(statsArray: DailyStats[]): void {
-  // Find max total for scaling
-  let maxTotal = 0;
-  for (const stats of statsArray) {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    if (total > maxTotal) maxTotal = total;
-  }
-
-  // If no data, show at least some height
-  if (maxTotal === 0) maxTotal = 1;
+  const container = document.getElementById("weekly-apex-chart");
+  if (!container) return;
 
   const today = getDateKey(new Date());
+  const categories = statsArray.map(s => {
+    const label = getShortDayName(s.date);
+    return s.date === today ? `${label} *` : label;
+  });
 
-  // Generate bars HTML
-  const barsHtml = statsArray.map((stats) => {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    const totalPct = (total / maxTotal) * 100;
+  const workingData = statsArray.map(s => Math.round(s.totalWorkingMs / 60000)); // minutes
+  const waitingData = statsArray.map(s => Math.round(s.totalWaitingMs / 60000));
+  const idleData = statsArray.map(s => Math.round(s.totalIdleMs / 60000));
 
-    // Calculate segment heights relative to bar height
-    const workingPct = total > 0 ? (stats.totalWorkingMs / total) * totalPct : 0;
-    const waitingPct = total > 0 ? (stats.totalWaitingMs / total) * totalPct : 0;
-    const idlePct = total > 0 ? (stats.totalIdleMs / total) * totalPct : 0;
+  const options: ApexCharts.ApexOptions = {
+    ...getBaseChartOptions(),
+    chart: {
+      ...getBaseChartOptions().chart,
+      type: 'bar',
+      height: 220,
+      stacked: true,
+      toolbar: { show: false },
+    },
+    series: [
+      { name: 'Working', data: workingData },
+      { name: 'Waiting', data: waitingData },
+      { name: 'Idle', data: idleData },
+    ],
+    colors: [COLORS.working, COLORS.waiting, COLORS.idle],
+    plotOptions: {
+      bar: {
+        borderRadius: 4,
+        columnWidth: '55%',
+        borderRadiusApplication: 'end',
+        borderRadiusWhenStacked: 'last',
+      },
+    },
+    xaxis: {
+      ...getBaseChartOptions().xaxis,
+      categories,
+    },
+    yaxis: {
+      ...getBaseChartOptions().yaxis,
+      labels: {
+        ...(getBaseChartOptions().yaxis as ApexYAxis)?.labels,
+        formatter: (val: number) => {
+          if (val >= 60) return `${Math.round(val / 60)}h`;
+          return `${Math.round(val)}m`;
+        },
+      },
+    },
+    tooltip: {
+      ...getBaseChartOptions().tooltip,
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: (val: number) => {
+          if (val >= 60) {
+            const h = Math.floor(val / 60);
+            const m = Math.round(val % 60);
+            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+          }
+          return `${Math.round(val)}m`;
+        },
+      },
+    },
+    legend: {
+      position: 'top',
+      horizontalAlign: 'right',
+      labels: { colors: 'rgba(255,255,255,0.7)' },
+      fontSize: '11px',
+      fontFamily: "'DM Mono', monospace",
+      markers: { size: 6, shape: 'circle' },
+    },
+    dataLabels: { enabled: false },
+  };
 
-    const tooltipText = total > 0
-      ? `${formatStatsDuration(total)} total`
-      : "No data";
-
-    return `
-      <div class="stats-chart-bar">
-        <div class="stats-bar-tooltip">${tooltipText}</div>
-        <div class="stats-bar-segment idle" style="height: ${idlePct}%"></div>
-        <div class="stats-bar-segment waiting" style="height: ${waitingPct}%"></div>
-        <div class="stats-bar-segment working" style="height: ${workingPct}%"></div>
-      </div>
-    `;
-  }).join("");
-
-  statsWeeklyChart.innerHTML = barsHtml;
-
-  // Generate labels HTML
-  const labelsHtml = statsArray.map((stats) => {
-    const isToday = stats.date === today;
-    const label = getShortDayName(stats.date);
-    return `<span class="stats-chart-label ${isToday ? "today" : ""}">${label}</span>`;
-  }).join("");
-
-  statsChartLabels.innerHTML = labelsHtml;
+  if (weeklyChart) {
+    weeklyChart.updateOptions(options, true, true);
+  } else {
+    weeklyChart = new ApexCharts(container, options);
+    weeklyChart.render();
+  }
 }
 
 // Chart constants
