@@ -16,5 +16,9 @@
     "sharp": "^0.34.5",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "chartjs-plugin-zoom": "^2.2.0"
   }
 }
