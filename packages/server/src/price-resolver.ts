@@ -28,6 +28,13 @@ const FALLBACK_PRICING: Record<string, ModelPricing> = {
     cacheCreate: 18.75e-6,
     cacheRead: 1.5e-6,
   },
+  // Opus 4.6: same pricing tier as Opus 4.5
+  "claude-opus-4-6": {
+    input: 15e-6,
+    output: 75e-6,
+    cacheCreate: 18.75e-6,
+    cacheRead: 1.5e-6,
+  },
   // Sonnet 4: $3/M input, $15/M output, $3.75/M cache create, $0.30/M cache read
   "claude-sonnet-4": {
     input: 3e-6,
@@ -132,6 +139,9 @@ function normalizeModelKey(modelName: string): string | null {
   // Match Claude models: claude-opus-4-5, claude-sonnet-4, claude-haiku-4-5, etc.
   const lowerName = modelName.toLowerCase();
 
+  if (lowerName.includes("opus-4-6") || lowerName.includes("opus-4.6")) {
+    return "claude-opus-4-6";
+  }
   if (lowerName.includes("opus") && lowerName.includes("4")) {
     return "claude-opus-4-5";
   }

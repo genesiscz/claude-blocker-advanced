@@ -107,7 +107,7 @@ function sendJson(res: ServerResponse, data: unknown, status = 200): void {
   res.end(JSON.stringify(data));
 }
 
-export function startServer(port: number = DEFAULT_PORT): void {
+export function startServer(port: number = DEFAULT_PORT, forceBackfill = false): void {
   const server = createServer(async (req, res) => {
     // CORS headers for local development
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -520,7 +520,7 @@ export function startServer(port: number = DEFAULT_PORT): void {
 `);
 
     // Run backfill on startup if needed
-    if (needsBackfill()) {
+    if (forceBackfill || needsBackfill()) {
       console.log("[Backfill] Starting historical transcript backfill...");
       backfillInProgress = true;
       runBackfill((progress) => {

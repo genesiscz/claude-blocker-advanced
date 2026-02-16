@@ -1,4 +1,5 @@
 import { executeSessionAction } from "../../shared/src/actions.js";
+import { Chart, COLORS } from "./chart-theme.js";
 
 export {};
 
@@ -283,11 +284,9 @@ const statsWaitingPct = document.getElementById("stats-waiting-pct") as HTMLElem
 const statsIdlePct = document.getElementById("stats-idle-pct") as HTMLElement;
 const statsSessionsStarted = document.getElementById("stats-sessions-started") as HTMLElement;
 const statsSessionsEnded = document.getElementById("stats-sessions-ended") as HTMLElement;
-const ringWorking = document.getElementById("ring-working") as SVGCircleElement;
-const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
-const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
-const statsWeeklyChart = document.getElementById("stats-weekly-chart") as HTMLElement;
-const statsChartLabels = document.getElementById("stats-chart-labels") as HTMLElement;
+const ringWorking = document.querySelector("#ring-working") as SVGCircleElement | null;
+const ringWaiting = document.querySelector("#ring-waiting") as SVGCircleElement | null;
+const ringIdle = document.querySelector("#ring-idle") as SVGCircleElement | null;
 const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
 const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
 const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
@@ -306,24 +305,10 @@ const backfillProgress = document.getElementById("backfill-progress") as HTMLEle
 
 // Cost chart elements
 const chart7DayTotal = document.getElementById("chart-7day-total") as HTMLElement;
-const costChartGrid = document.querySelector("#cost-chart-grid") as SVGGElement | null;
-const costChartArea = document.querySelector("#cost-chart-area") as SVGPathElement | null;
-const costChartLine = document.querySelector("#cost-chart-line") as SVGPathElement | null;
-const costChartDots = document.querySelector("#cost-chart-dots") as SVGGElement | null;
-const costChartXAxis = document.getElementById("cost-chart-x-axis") as HTMLElement;
-const costChartTooltip = document.getElementById("cost-chart-tooltip") as HTMLElement;
 
 // Cumulative chart elements
 const mtdTotal = document.getElementById("mtd-total") as HTMLElement;
 const mtdProjected = document.getElementById("mtd-projected") as HTMLElement;
-const cumulativeChartGrid = document.querySelector("#cumulative-chart-grid") as SVGGElement | null;
-const cumulativeChartArea = document.querySelector("#cumulative-chart-area") as SVGPathElement | null;
-const cumulativeChartBars = document.querySelector("#cumulative-chart-bars") as SVGGElement | null;
-const cumulativeChartLine = document.querySelector("#cumulative-chart-line") as SVGPathElement | null;
-const cumulativeChartProjected = document.querySelector("#cumulative-chart-projected") as SVGPathElement | null;
-const cumulativeChartDots = document.querySelector("#cumulative-chart-dots") as SVGGElement | null;
-const cumulativeChartXAxis = document.getElementById("cumulative-chart-x-axis") as HTMLElement;
-const cumulativeChartTooltip = document.getElementById("cumulative-chart-tooltip") as HTMLElement;
 
 // Model donut chart elements
 const donutOpus = document.querySelector("#donut-opus") as SVGCircleElement | null;
@@ -338,6 +323,9 @@ const modelToggleTokens = document.getElementById("model-toggle-tokens") as HTML
 // Chart state
 let modelChartMode: "cost" | "tokens" = "cost";
 let cachedStatsArray: DailyStats[] = [];
+let weeklyChartInstance: Chart | null = null;
+let costChartInstance: Chart | null = null;
+let cumulativeChartInstance: Chart | null = null;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -532,6 +520,19 @@ async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
   });
 }
 
+// Load all stored stats from service worker
+async function loadAllStats(): Promise<DailyStats[]> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_ALL_STATS" }, (response) => {
+      if (response?.success && Array.isArray(response.stats)) {
+        resolve(response.stats);
+      } else {
+        resolve([]);
+      }
+    });
+  });
+}
+
 // Project statistics for a given date
 interface ProjectStats {
   projectName: string;
@@ -584,10 +585,12 @@ function getModelBadgeClass(modelName: string): string {
 // Format model name for display
 function formatModelName(modelName: string): string {
   // Extract the model type from full model ID
-  // e.g., "claude-opus-4-5-20251101" -> "Opus 4.5"
+  // e.g., "claude-opus-4-6" -> "Opus 4.6"
   const lower = modelName.toLowerCase();
+  if (lower.includes("opus-4-6") || lower.includes("opus-4.6")) return "Opus 4.6";
   if (lower.includes("opus-4-5") || lower.includes("opus-4.5")) return "Opus 4.5";
   if (lower.includes("opus-4")) return "Opus 4";
+  if (lower.includes("sonnet-4-5") || lower.includes("sonnet-4.5")) return "Sonnet 4.5";
   if (lower.includes("sonnet-4")) return "Sonnet 4";
   if (lower.includes("sonnet-3-5") || lower.includes("sonnet-3.5")) return "Sonnet 3.5";
   if (lower.includes("haiku-4-5") || lower.includes("haiku-4.5")) return "Haiku 4.5";
@@ -711,6 +714,8 @@ function renderRingChart(stats: DailyStats): void {
   // Update ring chart segments
   // The ring is drawn starting from the top (after -90deg rotation in CSS)
   // We need to draw segments in order: working (on top), waiting, idle (on bottom)
+  if (!ringWorking || !ringWaiting || !ringIdle) return;
+
   if (total === 0) {
     // No data - show empty ring
     ringWorking.style.strokeDasharray = `0 ${RING_CIRCUMFERENCE}`;
@@ -739,174 +744,214 @@ function renderRingChart(stats: DailyStats): void {
 
 // Render the weekly chart
 function renderWeeklyChart(statsArray: DailyStats[]): void {
-  // Find max total for scaling
-  let maxTotal = 0;
-  for (const stats of statsArray) {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    if (total > maxTotal) maxTotal = total;
-  }
-
-  // If no data, show at least some height
-  if (maxTotal === 0) maxTotal = 1;
+  const canvas = document.getElementById("weekly-chartjs") as HTMLCanvasElement | null;
+  if (!canvas) return;
 
   const today = getDateKey(new Date());
-
-  // Generate bars HTML
-  const barsHtml = statsArray.map((stats) => {
-    const total = stats.totalWorkingMs + stats.totalWaitingMs + stats.totalIdleMs;
-    const totalPct = (total / maxTotal) * 100;
-
-    // Calculate segment heights relative to bar height
-    const workingPct = total > 0 ? (stats.totalWorkingMs / total) * totalPct : 0;
-    const waitingPct = total > 0 ? (stats.totalWaitingMs / total) * totalPct : 0;
-    const idlePct = total > 0 ? (stats.totalIdleMs / total) * totalPct : 0;
-
-    const tooltipText = total > 0
-      ? `${formatStatsDuration(total)} total`
-      : "No data";
-
-    return `
-      <div class="stats-chart-bar">
-        <div class="stats-bar-tooltip">${tooltipText}</div>
-        <div class="stats-bar-segment idle" style="height: ${idlePct}%"></div>
-        <div class="stats-bar-segment waiting" style="height: ${waitingPct}%"></div>
-        <div class="stats-bar-segment working" style="height: ${workingPct}%"></div>
-      </div>
-    `;
-  }).join("");
-
-  statsWeeklyChart.innerHTML = barsHtml;
-
-  // Generate labels HTML
-  const labelsHtml = statsArray.map((stats) => {
-    const isToday = stats.date === today;
-    const label = getShortDayName(stats.date);
-    return `<span class="stats-chart-label ${isToday ? "today" : ""}">${label}</span>`;
-  }).join("");
-
-  statsChartLabels.innerHTML = labelsHtml;
-}
-
-// Chart constants
-const CHART_WIDTH = 640;
-const CHART_HEIGHT = 160;
-const CHART_PADDING = { left: 30, right: 30, top: 20, bottom: 20 };
-const DONUT_CIRCUMFERENCE = 2 * Math.PI * 60; // r=60
-
-// Generate smooth bezier curve path from points
-function generateSmoothPath(points: Array<{x: number; y: number}>, closed = false): string {
-  if (points.length < 2) return "";
-
-  const tension = 0.3;
-  let path = `M ${points[0].x} ${points[0].y}`;
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[Math.max(i - 1, 0)];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[Math.min(i + 2, points.length - 1)];
-
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
-
-    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-  }
-
-  if (closed) {
-    path += ` L ${points[points.length - 1].x} ${CHART_HEIGHT - CHART_PADDING.bottom}`;
-    path += ` L ${points[0].x} ${CHART_HEIGHT - CHART_PADDING.bottom} Z`;
-  }
-
-  return path;
-}
-
-// Render 7-day cost line chart
-function renderCostLineChart(statsArray: DailyStats[]): void {
-  if (!costChartLine || !costChartArea || !costChartDots || !costChartXAxis) return;
-
-  // Calculate total and find max
-  let total = 0;
-  let maxCost = 0;
-  for (const s of statsArray) {
-    total += s.totalCostUsd ?? 0;
-    if ((s.totalCostUsd ?? 0) > maxCost) maxCost = s.totalCostUsd ?? 0;
-  }
-
-  // Update total display
-  chart7DayTotal.textContent = formatCost(total);
-
-  // If no data, show flat line
-  if (maxCost === 0) maxCost = 1;
-
-  // Add 10% padding to max
-  maxCost *= 1.1;
-
-  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const stepX = usableWidth / (statsArray.length - 1 || 1);
-
-  // Generate points
-  const points: Array<{x: number; y: number; cost: number; date: string}> = statsArray.map((s, i) => ({
-    x: CHART_PADDING.left + i * stepX,
-    y: CHART_PADDING.top + usableHeight - ((s.totalCostUsd ?? 0) / maxCost) * usableHeight,
-    cost: s.totalCostUsd ?? 0,
-    date: s.date,
-  }));
-
-  // Draw line
-  const linePath = generateSmoothPath(points);
-  costChartLine.setAttribute("d", linePath);
-
-  // Draw area
-  const areaPath = generateSmoothPath(points, true);
-  costChartArea.setAttribute("d", areaPath);
-
-  // Draw grid lines
-  if (costChartGrid) {
-    let gridHtml = "";
-    const gridLines = 4;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
-      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
-    }
-    costChartGrid.innerHTML = gridHtml;
-  }
-
-  // Draw dots
-  let dotsHtml = "";
-  for (const p of points) {
-    dotsHtml += `<circle cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cost="${p.cost}"/>`;
-  }
-  costChartDots.innerHTML = dotsHtml;
-
-  // Add hover events for dots
-  costChartDots.querySelectorAll("circle").forEach(dot => {
-    dot.addEventListener("mouseenter", (e) => {
-      const target = e.target as SVGCircleElement;
-      const date = target.dataset.date ?? "";
-      const cost = parseFloat(target.dataset.cost ?? "0");
-      showChartTooltip(costChartTooltip, target, date, cost);
-    });
-    dot.addEventListener("mouseleave", () => {
-      costChartTooltip.classList.remove("visible");
-    });
+  const labels = statsArray.map(s => {
+    const label = getShortDayName(s.date);
+    return s.date === today ? `${label} *` : label;
   });
 
-  // X-axis labels
-  const today = getDateKey(new Date());
-  costChartXAxis.innerHTML = points.map(p => {
-    const isToday = p.date === today;
-    return `<span class="chart-x-label ${isToday ? "active" : ""}">${getShortDayName(p.date)}</span>`;
-  }).join("");
+  const workingData = statsArray.map(s => Math.round(s.totalWorkingMs / 60000));
+  const waitingData = statsArray.map(s => Math.round(s.totalWaitingMs / 60000));
+  const idleData = statsArray.map(s => Math.round(s.totalIdleMs / 60000));
+
+  const config = {
+    type: 'bar' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Working',
+          data: workingData,
+          backgroundColor: COLORS.workingAlpha,
+          borderColor: COLORS.working,
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false as const,
+        },
+        {
+          label: 'Waiting',
+          data: waitingData,
+          backgroundColor: COLORS.waitingAlpha,
+          borderColor: COLORS.waiting,
+          borderWidth: 1,
+          borderRadius: 0,
+          borderSkipped: false as const,
+        },
+        {
+          label: 'Idle',
+          data: idleData,
+          backgroundColor: COLORS.idleAlpha,
+          borderColor: COLORS.idle,
+          borderWidth: 1,
+          borderRadius: 0,
+          borderSkipped: false as const,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: {
+          stacked: true,
+          grid: { display: false },
+        },
+        y: {
+          stacked: true,
+          ticks: {
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 60) return `${Math.round(v / 60)}h`;
+              return `${Math.round(v)}m`;
+            },
+          },
+        },
+      },
+      plugins: {
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) => {
+              const val = ctx.parsed.y;
+              if (val === null || val === undefined) return '';
+              const name = ctx.dataset.label ?? '';
+              if (val >= 60) {
+                const h = Math.floor(val / 60);
+                const m = Math.round(val % 60);
+                return m > 0 ? `${name}: ${h}h ${m}m` : `${name}: ${h}h`;
+              }
+              return `${name}: ${Math.round(val)}m`;
+            },
+          },
+        },
+        legend: {
+          position: 'top' as const,
+          align: 'end' as const,
+        },
+      },
+    },
+  };
+
+  if (weeklyChartInstance) {
+    weeklyChartInstance.data = config.data;
+    weeklyChartInstance.update();
+  } else {
+    weeklyChartInstance = new Chart(canvas, config);
+  }
 }
 
-// Render month-to-date cumulative chart
-function renderCumulativeChart(statsArray: DailyStats[]): void {
-  if (!cumulativeChartLine || !cumulativeChartArea || !cumulativeChartDots || !cumulativeChartXAxis || !cumulativeChartBars) return;
+// Donut chart constant (used by model donut chart)
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * 60; // r=60
 
-  // Sort by date and calculate cumulative
+// Format date as short label for chart x-axis (e.g. "Jan 15")
+function getShortDateLabel(dateKey: string): string {
+  const date = new Date(dateKey + "T00:00:00");
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${monthNames[date.getMonth()]} ${date.getDate()}`;
+}
+
+// Render cost line chart (all-time data)
+function renderCostLineChart(statsArray: DailyStats[]): void {
+  const canvas = document.getElementById("cost-chartjs") as HTMLCanvasElement | null;
+  if (!canvas) return;
+
+  const sorted = [...statsArray].sort((a, b) => a.date.localeCompare(b.date));
+
+  let total = 0;
+  for (const s of sorted) total += s.totalCostUsd ?? 0;
+  chart7DayTotal.textContent = formatCost(total);
+
+  const today = getDateKey(new Date());
+  const labels = sorted.map(s => {
+    const label = getShortDateLabel(s.date);
+    return s.date === today ? `${label} *` : label;
+  });
+  const costData = sorted.map(s => Math.round((s.totalCostUsd ?? 0) * 100) / 100);
+
+  const config = {
+    type: 'line' as const,
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cost',
+        data: costData,
+        borderColor: COLORS.cost,
+        backgroundColor: (ctx: { chart: Chart }) => {
+          const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+          gradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+          return gradient;
+        },
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2.5,
+        pointBackgroundColor: 'transparent',
+        pointBorderColor: COLORS.cost,
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        pointHoverBackgroundColor: COLORS.cost,
+      }],
+    },
+    options: {
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          ticks: {
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+              if (v >= 1) return `$${Math.round(v)}`;
+              if (v > 0) return `${Math.round(v * 100)}¢`;
+              return '$0';
+            },
+          },
+        },
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx: { parsed: { y: number | null } }) => formatCost(ctx.parsed.y ?? 0),
+          },
+        },
+        legend: { display: false },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: true, backgroundColor: 'rgba(255, 215, 0, 0.1)', borderColor: COLORS.cost, borderWidth: 1 },
+            mode: 'x' as const,
+          },
+          pan: {
+            enabled: true,
+            mode: 'x' as const,
+          },
+        },
+      },
+      interaction: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+    },
+  };
+
+  if (costChartInstance) {
+    costChartInstance.data = config.data;
+    costChartInstance.update();
+  } else {
+    costChartInstance = new Chart(canvas, config);
+  }
+}
+
+// Render cumulative cost chart (all-time data)
+function renderCumulativeChart(statsArray: DailyStats[]): void {
+  const canvas = document.getElementById("cumulative-chartjs") as HTMLCanvasElement | null;
+  if (!canvas) return;
+
   const sorted = [...statsArray].sort((a, b) => a.date.localeCompare(b.date));
   let cumulative = 0;
   const cumulativeData = sorted.map(s => {
@@ -915,140 +960,134 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
   });
 
   const total = cumulative;
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const dayOfMonth = new Date().getDate();
-  const avgPerDay = dayOfMonth > 0 ? total / dayOfMonth : 0;
+
+  // Month-to-date projection based on current month's spending
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthSpend = sorted
+    .filter(s => s.date.startsWith(monthKey))
+    .reduce((sum, s) => sum + (s.totalCostUsd ?? 0), 0);
+  const avgPerDay = dayOfMonth > 0 ? monthSpend / dayOfMonth : 0;
   const projected = avgPerDay * daysInMonth;
 
-  // Update stats
   mtdTotal.textContent = formatCost(total);
   mtdProjected.textContent = formatCost(projected);
 
-  // Find max for scaling
-  let maxCumulative = Math.max(cumulative, projected);
-  if (maxCumulative === 0) maxCumulative = 1;
-  maxCumulative *= 1.1;
+  const labels = cumulativeData.map(s => getShortDateLabel(s.date));
+  const dailyValues = cumulativeData.map(d => Math.round(d.daily * 100) / 100);
+  const cumulativeValues = cumulativeData.map(d => Math.round(d.cumulative * 100) / 100);
 
-  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const stepX = usableWidth / (cumulativeData.length - 1 || 1);
-  const barWidth = Math.min(stepX * 0.6, 30);
+  // No projected line for all-time view
+  const projectedValues: (number | null)[] = cumulativeData.map(() => null);
 
-  // Generate points
-  const points: Array<{x: number; y: number; cumulative: number; daily: number; date: string}> = cumulativeData.map((s, i) => ({
-    x: CHART_PADDING.left + i * stepX,
-    y: CHART_PADDING.top + usableHeight - (s.cumulative / maxCumulative) * usableHeight,
-    cumulative: s.cumulative,
-    daily: s.daily,
-    date: s.date,
-  }));
+  const config = {
+    type: 'bar' as const,
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar' as const,
+          label: 'Daily Cost',
+          data: dailyValues,
+          backgroundColor: 'rgba(34, 197, 94, 0.3)',
+          borderColor: 'rgba(34, 197, 94, 0.5)',
+          borderWidth: 1,
+          borderRadius: 3,
+          order: 2,
+        },
+        {
+          type: 'line' as const,
+          label: 'Cumulative',
+          data: cumulativeValues,
+          borderColor: COLORS.cumulative,
+          backgroundColor: COLORS.cumulativeAlpha,
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointBackgroundColor: 'transparent',
+          pointBorderColor: COLORS.cumulative,
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          order: 1,
+        },
+        {
+          type: 'line' as const,
+          label: 'Projected',
+          data: projectedValues,
+          borderColor: COLORS.cumulative,
+          borderDash: [5, 5],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          spanGaps: true,
+          fill: false,
+          order: 0,
+        },
+      ],
+    },
+    options: {
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          ticks: {
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+              if (v >= 1) return `$${Math.round(v)}`;
+              if (v > 0) return `${Math.round(v * 100)}¢`;
+              return '$0';
+            },
+          },
+        },
+      },
+      plugins: {
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) => {
+              const val = ctx.parsed.y;
+              if (val === null || val === undefined) return '';
+              const name = ctx.dataset.label ?? '';
+              if (name === 'Daily Cost') return `${name}: +${formatCost(val)}`;
+              return `${name}: ${formatCost(val)}`;
+            },
+          },
+        },
+        legend: {
+          position: 'top' as const,
+          align: 'start' as const,
+        },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: true, backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: COLORS.cumulative, borderWidth: 1 },
+            mode: 'x' as const,
+          },
+          pan: {
+            enabled: true,
+            mode: 'x' as const,
+          },
+        },
+      },
+      interaction: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+    },
+  };
 
-  // Draw bars
-  let barsHtml = "";
-  const barMaxHeight = usableHeight * 0.4;
-  const maxDaily = Math.max(...cumulativeData.map(d => d.daily), 1);
-  for (const p of points) {
-    const barHeight = (p.daily / maxDaily) * barMaxHeight;
-    const barY = CHART_HEIGHT - CHART_PADDING.bottom - barHeight;
-    barsHtml += `<rect x="${p.x - barWidth / 2}" y="${barY}" width="${barWidth}" height="${barHeight}" data-date="${p.date}" data-daily="${p.daily}"/>`;
+  if (cumulativeChartInstance) {
+    cumulativeChartInstance.data = config.data;
+    cumulativeChartInstance.update();
+  } else {
+    cumulativeChartInstance = new Chart(canvas, config);
   }
-  cumulativeChartBars.innerHTML = barsHtml;
-
-  // Draw line
-  const linePath = generateSmoothPath(points);
-  cumulativeChartLine.setAttribute("d", linePath);
-
-  // Draw area
-  const areaPath = generateSmoothPath(points, true);
-  cumulativeChartArea.setAttribute("d", areaPath);
-
-  // Draw projected line
-  if (cumulativeChartProjected && points.length > 0) {
-    const lastPoint = points[points.length - 1];
-    const projectedY = CHART_PADDING.top + usableHeight - (projected / maxCumulative) * usableHeight;
-    cumulativeChartProjected.setAttribute("d", `M ${lastPoint.x} ${lastPoint.y} L ${CHART_WIDTH - CHART_PADDING.right} ${projectedY}`);
-  }
-
-  // Draw grid
-  if (cumulativeChartGrid) {
-    let gridHtml = "";
-    const gridLines = 4;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
-      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
-    }
-    cumulativeChartGrid.innerHTML = gridHtml;
-  }
-
-  // Draw dots
-  let dotsHtml = "";
-  for (const p of points) {
-    dotsHtml += `<circle class="cumulative" cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cumulative="${p.cumulative}" data-daily="${p.daily}"/>`;
-  }
-  cumulativeChartDots.innerHTML = dotsHtml;
-
-  // Add hover events
-  cumulativeChartDots.querySelectorAll("circle").forEach(dot => {
-    dot.addEventListener("mouseenter", (e) => {
-      const target = e.target as SVGCircleElement;
-      const date = target.dataset.date ?? "";
-      const cumVal = parseFloat(target.dataset.cumulative ?? "0");
-      const dailyVal = parseFloat(target.dataset.daily ?? "0");
-      showCumulativeTooltip(cumulativeChartTooltip, target, date, cumVal, dailyVal);
-    });
-    dot.addEventListener("mouseleave", () => {
-      cumulativeChartTooltip.classList.remove("visible");
-    });
-  });
-
-  // X-axis labels
-  const today = getDateKey(new Date());
-  cumulativeChartXAxis.innerHTML = points.map(p => {
-    const isToday = p.date === today;
-    const dayNum = parseInt(p.date.split("-")[2]);
-    return `<span class="chart-x-label ${isToday ? "active" : ""}">${dayNum}</span>`;
-  }).join("");
-}
-
-// Show tooltip for cost chart
-function showChartTooltip(tooltip: HTMLElement, target: SVGCircleElement, date: string, cost: number): void {
-  const rect = target.getBoundingClientRect();
-  const containerRect = tooltip.parentElement?.getBoundingClientRect();
-  if (!containerRect) return;
-
-  tooltip.innerHTML = `
-    <div class="tooltip-date">${formatStatsDate(date)}</div>
-    <div class="tooltip-value">${formatCost(cost)}</div>
-  `;
-
-  const x = rect.left - containerRect.left + rect.width / 2;
-  const y = rect.top - containerRect.top - 10;
-
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
-  tooltip.style.transform = "translate(-50%, -100%)";
-  tooltip.classList.add("visible");
-}
-
-// Show tooltip for cumulative chart
-function showCumulativeTooltip(tooltip: HTMLElement, target: SVGCircleElement, date: string, cumulative: number, daily: number): void {
-  const rect = target.getBoundingClientRect();
-  const containerRect = tooltip.parentElement?.getBoundingClientRect();
-  if (!containerRect) return;
-
-  tooltip.innerHTML = `
-    <div class="tooltip-date">${formatStatsDate(date)}</div>
-    <div class="tooltip-value cumulative">${formatCost(cumulative)}</div>
-    <div class="tooltip-daily">+${formatCost(daily)} today</div>
-  `;
-
-  const x = rect.left - containerRect.left + rect.width / 2;
-  const y = rect.top - containerRect.top - 10;
-
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
-  tooltip.style.transform = "translate(-50%, -100%)";
-  tooltip.classList.add("visible");
 }
 
 // Render model donut chart
@@ -1118,9 +1157,9 @@ function renderModelDonutChart(modelBreakdown: Record<string, {inputTokens: numb
 
   // Render legend
   const legendItems = [
-    { name: "Opus 4.5", key: "opus", color: "opus", tokens: modelData.opus.tokens, cost: modelData.opus.cost, pct: opusPct },
-    { name: "Sonnet 4", key: "sonnet", color: "sonnet", tokens: modelData.sonnet.tokens, cost: modelData.sonnet.cost, pct: sonnetPct },
-    { name: "Haiku 4.5", key: "haiku", color: "haiku", tokens: modelData.haiku.tokens, cost: modelData.haiku.cost, pct: haikuPct },
+    { name: "Opus", key: "opus", color: "opus", tokens: modelData.opus.tokens, cost: modelData.opus.cost, pct: opusPct },
+    { name: "Sonnet", key: "sonnet", color: "sonnet", tokens: modelData.sonnet.tokens, cost: modelData.sonnet.cost, pct: sonnetPct },
+    { name: "Haiku", key: "haiku", color: "haiku", tokens: modelData.haiku.tokens, cost: modelData.haiku.cost, pct: haikuPct },
   ].filter(item => (modelChartMode === "cost" ? item.cost : item.tokens) > 0);
 
   modelLegend.innerHTML = legendItems.map(item => `
@@ -1139,30 +1178,26 @@ function renderModelDonutChart(modelBreakdown: Record<string, {inputTokens: numb
 }
 
 // Render all cost charts
-function renderCostCharts(statsArray: DailyStats[]): void {
+async function renderCostCharts(statsArray: DailyStats[]): Promise<void> {
   cachedStatsArray = statsArray;
 
-  // Render 7-day cost chart (using last 7 days from array)
-  renderCostLineChart(statsArray);
+  // Load ALL stats for cost and cumulative charts (not limited to 7 days or current month)
+  const allStats = await loadAllStats();
+  const nonEmpty = allStats.filter(s =>
+    (s.totalCostUsd ?? 0) > 0 || (s.totalWorkingMs ?? 0) > 0 || (s.sessionsStarted ?? 0) > 0
+  );
 
-  // For cumulative, get all days of current month
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthDays: string[] = [];
-  for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
-    monthDays.push(getDateKey(new Date(d)));
+  // Render cost chart with all data
+  renderCostLineChart(nonEmpty.length > 0 ? nonEmpty : statsArray);
+
+  // Render cumulative chart with all data
+  if (nonEmpty.length > 0) {
+    renderCumulativeChart(nonEmpty);
   }
 
-  // Use cached stats for month if available, otherwise use what we have
-  const monthStats = statsArray.filter(s => monthDays.includes(s.date));
-  if (monthStats.length > 0) {
-    renderCumulativeChart(monthStats);
-  }
-
-  // Render model donut using today's breakdown
-  const today = getDateKey(new Date());
-  const todayStats = statsArray.find(s => s.date === today);
-  renderModelDonutChart(todayStats?.modelBreakdown);
+  // Render model donut using selected date's breakdown
+  const selectedDateStats = statsArray.find(s => s.date === currentStatsDate);
+  renderModelDonutChart(selectedDateStats?.modelBreakdown);
 }
 
 // Project breakdown for selected date
