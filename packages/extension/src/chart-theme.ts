@@ -62,7 +62,10 @@ Chart.defaults.plugins.tooltip.padding = 10;
 Chart.defaults.plugins.tooltip.displayColors = true;
 Chart.defaults.plugins.legend.labels.usePointStyle = true;
 Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
-Chart.defaults.animation = { duration: 600, easing: 'easeInOutQuart' };
+if (Chart.defaults.animation !== false) {
+  Chart.defaults.animation.duration = 600;
+  Chart.defaults.animation.easing = 'easeInOutQuart';
+}
 Chart.defaults.responsive = true;
 Chart.defaults.maintainAspectRatio = false;
 
