@@ -814,40 +814,8 @@ function renderWeeklyChart(statsArray: DailyStats[]): void {
   }
 }
 
-// Chart constants
-const CHART_WIDTH = 640;
-const CHART_HEIGHT = 160;
-const CHART_PADDING = { left: 30, right: 30, top: 20, bottom: 20 };
-const DONUT_CIRCUMFERENCE = 2 * Math.PI * 60; // r=60
-
-// Generate smooth bezier curve path from points
-function generateSmoothPath(points: Array<{x: number; y: number}>, closed = false): string {
-  if (points.length < 2) return "";
-
-  const tension = 0.3;
-  let path = `M ${points[0].x} ${points[0].y}`;
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[Math.max(i - 1, 0)];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[Math.min(i + 2, points.length - 1)];
-
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
-
-    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-  }
-
-  if (closed) {
-    path += ` L ${points[points.length - 1].x} ${CHART_HEIGHT - CHART_PADDING.bottom}`;
-    path += ` L ${points[0].x} ${CHART_HEIGHT - CHART_PADDING.bottom} Z`;
-  }
-
-  return path;
-}
+// Donut chart circumference (r=60)
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * 60;
 
 // Render 7-day cost line chart
 function renderCostLineChart(statsArray: DailyStats[]): void {
