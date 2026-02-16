@@ -1088,6 +1088,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "GET_ALL_STATS") {
+    // Get all stored stats (scan all stats_* keys)
+    chrome.storage.local.get(null).then((all) => {
+      const stats: DailyStats[] = [];
+      for (const key of Object.keys(all)) {
+        if (key.startsWith("stats_") && all[key]?.date) {
+          const s = all[key] as DailyStats;
+          stats.push({
+            ...s,
+            totalInputTokens: s.totalInputTokens ?? 0,
+            totalOutputTokens: s.totalOutputTokens ?? 0,
+            totalCacheCreationTokens: s.totalCacheCreationTokens ?? 0,
+            totalCacheReadTokens: s.totalCacheReadTokens ?? 0,
+            totalCostUsd: s.totalCostUsd ?? 0,
+          });
+        }
+      }
+      stats.sort((a, b) => a.date.localeCompare(b.date));
+      sendResponse({ success: true, stats });
+    }).catch((err) => {
+      sendResponse({ success: false, error: String(err) });
+    });
+    return true;
+  }
+
   if (message.type === "GET_SESSION_HISTORY") {
     loadSessionHistory()
       .then((history) => {

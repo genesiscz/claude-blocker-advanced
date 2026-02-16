@@ -521,6 +521,26 @@ async function loadStatsRange(dates: string[]): Promise<DailyStats[]> {
   });
 }
 
+// Load all stored stats from service worker
+async function loadAllStats(): Promise<DailyStats[]> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "GET_ALL_STATS" }, (response) => {
+      if (response?.success && Array.isArray(response.stats)) {
+        resolve(response.stats);
+      } else {
+        resolve([]);
+      }
+    });
+  });
+}
+
+// Format date as short label for chart x-axis (e.g. "Jan 15")
+function getShortDateLabel(dateKey: string): string {
+  const date = new Date(dateKey + "T00:00:00");
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${monthNames[date.getMonth()]} ${date.getDate()}`;
+}
+
 // Project statistics for a given date
 interface ProjectStats {
   projectName: string;
@@ -822,16 +842,18 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
   const container = document.getElementById("cost-apex-chart");
   if (!container) return;
 
+  const sorted = [...statsArray].sort((a, b) => a.date.localeCompare(b.date));
+
   let total = 0;
-  for (const s of statsArray) total += s.totalCostUsd ?? 0;
+  for (const s of sorted) total += s.totalCostUsd ?? 0;
   chart7DayTotal.textContent = formatCost(total);
 
   const today = getDateKey(new Date());
-  const categories = statsArray.map(s => {
-    const label = getShortDayName(s.date);
+  const categories = sorted.map(s => {
+    const label = getShortDateLabel(s.date);
     return s.date === today ? `${label} *` : label;
   });
-  const costData = statsArray.map(s => Math.round((s.totalCostUsd ?? 0) * 100) / 100);
+  const costData = sorted.map(s => Math.round((s.totalCostUsd ?? 0) * 100) / 100);
 
   const options: ApexCharts.ApexOptions = {
     ...getBaseChartOptions(),
@@ -916,7 +938,7 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
   }
 }
 
-// Render month-to-date cumulative chart
+// Render cumulative cost chart (all-time data)
 function renderCumulativeChart(statsArray: DailyStats[]): void {
   const container = document.getElementById("cumulative-apex-chart");
   if (!container) return;
@@ -929,29 +951,27 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
   });
 
   const total = cumulative;
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const dayOfMonth = new Date().getDate();
-  const avgPerDay = dayOfMonth > 0 ? total / dayOfMonth : 0;
+
+  // Month-to-date projection based on current month's spending
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthSpend = sorted
+    .filter(s => s.date.startsWith(monthKey))
+    .reduce((sum, s) => sum + (s.totalCostUsd ?? 0), 0);
+  const avgPerDay = dayOfMonth > 0 ? monthSpend / dayOfMonth : 0;
   const projected = avgPerDay * daysInMonth;
 
   mtdTotal.textContent = formatCost(total);
   mtdProjected.textContent = formatCost(projected);
 
-  const categories = cumulativeData.map(s => String(parseInt(s.date.split("-")[2])));
+  const categories = cumulativeData.map(s => getShortDateLabel(s.date));
   const dailyData = cumulativeData.map(d => Math.round(d.daily * 100) / 100);
   const cumulativeSeries = cumulativeData.map(d => Math.round(d.cumulative * 100) / 100);
 
-  // Build projected series: null for all days except last day -> projected value at month end
-  const projectedSeries: (number | null)[] = cumulativeData.map((_, i) =>
-    i === cumulativeData.length - 1 ? cumulativeSeries[i] : null
-  );
-  // Add projected end point if month has remaining days
-  if (dayOfMonth < daysInMonth) {
-    categories.push(String(daysInMonth));
-    dailyData.push(0);
-    cumulativeSeries.push(cumulativeSeries[cumulativeSeries.length - 1] ?? 0);
-    projectedSeries.push(Math.round(projected * 100) / 100);
-  }
+  // No projected line for all-time view
+  const projectedSeries: (number | null)[] = cumulativeData.map(() => null);
 
   const options: ApexCharts.ApexOptions = {
     ...getBaseChartOptions(),
@@ -1141,24 +1161,21 @@ function renderModelDonutChart(modelBreakdown: Record<string, {inputTokens: numb
 }
 
 // Render all cost charts
-function renderCostCharts(statsArray: DailyStats[]): void {
+async function renderCostCharts(statsArray: DailyStats[]): Promise<void> {
   cachedStatsArray = statsArray;
 
-  // Render 7-day cost chart (using last 7 days from array)
-  renderCostLineChart(statsArray);
+  // Load ALL stats for cost and cumulative charts (not limited to 7 days or current month)
+  const allStats = await loadAllStats();
+  const nonEmpty = allStats.filter(s =>
+    (s.totalCostUsd ?? 0) > 0 || (s.totalWorkingMs ?? 0) > 0 || (s.sessionsStarted ?? 0) > 0
+  );
 
-  // For cumulative, get all days of current month
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthDays: string[] = [];
-  for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
-    monthDays.push(getDateKey(new Date(d)));
-  }
+  // Render cost chart with all data
+  renderCostLineChart(nonEmpty.length > 0 ? nonEmpty : statsArray);
 
-  // Use cached stats for month if available, otherwise use what we have
-  const monthStats = statsArray.filter(s => monthDays.includes(s.date));
-  if (monthStats.length > 0) {
-    renderCumulativeChart(monthStats);
+  // Render cumulative chart with all data
+  if (nonEmpty.length > 0) {
+    renderCumulativeChart(nonEmpty);
   }
 
   // Render model donut using selected date's breakdown
