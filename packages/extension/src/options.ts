@@ -284,9 +284,9 @@ const statsWaitingPct = document.getElementById("stats-waiting-pct") as HTMLElem
 const statsIdlePct = document.getElementById("stats-idle-pct") as HTMLElement;
 const statsSessionsStarted = document.getElementById("stats-sessions-started") as HTMLElement;
 const statsSessionsEnded = document.getElementById("stats-sessions-ended") as HTMLElement;
-const ringWorking = document.getElementById("ring-working") as SVGCircleElement;
-const ringWaiting = document.getElementById("ring-waiting") as SVGCircleElement;
-const ringIdle = document.getElementById("ring-idle") as SVGCircleElement;
+const ringWorking = document.querySelector("#ring-working") as SVGCircleElement | null;
+const ringWaiting = document.querySelector("#ring-waiting") as SVGCircleElement | null;
+const ringIdle = document.querySelector("#ring-idle") as SVGCircleElement | null;
 const statsTokens = document.getElementById("stats-tokens") as HTMLElement;
 const statsInputTokens = document.getElementById("stats-input-tokens") as HTMLElement;
 const statsOutputTokens = document.getElementById("stats-output-tokens") as HTMLElement;
@@ -701,6 +701,8 @@ function renderRingChart(stats: DailyStats): void {
   // Update ring chart segments
   // The ring is drawn starting from the top (after -90deg rotation in CSS)
   // We need to draw segments in order: working (on top), waiting, idle (on bottom)
+  if (!ringWorking || !ringWaiting || !ringIdle) return;
+
   if (total === 0) {
     // No data - show empty ring
     ringWorking.style.strokeDasharray = `0 ${RING_CIRCUMFERENCE}`;
@@ -798,8 +800,9 @@ function renderWeeklyChart(statsArray: DailyStats[]): void {
           mode: 'index' as const,
           intersect: false,
           callbacks: {
-            label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) => {
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) => {
               const val = ctx.parsed.y;
+              if (val === null || val === undefined) return '';
               const name = ctx.dataset.label ?? '';
               if (val >= 60) {
                 const h = Math.floor(val / 60);
@@ -884,7 +887,7 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
       plugins: {
         tooltip: {
           callbacks: {
-            label: (ctx: { parsed: { y: number } }) => formatCost(ctx.parsed.y),
+            label: (ctx: { parsed: { y: number | null } }) => formatCost(ctx.parsed.y ?? 0),
           },
         },
         legend: { display: false },
