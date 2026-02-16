@@ -13,7 +13,7 @@ const COLORS = {
   textSecondary: 'rgba(255, 255, 255, 0.5)',
 } as const;
 
-export function getBaseChartOptions(): ApexCharts.ApexOptions {
+export function getBaseChartOptions() {
   return {
     chart: {
       background: 'transparent',
@@ -32,7 +32,7 @@ export function getBaseChartOptions(): ApexCharts.ApexOptions {
       },
     },
     theme: {
-      mode: 'dark',
+      mode: 'dark' as const,
     },
     grid: {
       borderColor: COLORS.gridLine,
