@@ -305,12 +305,6 @@ const backfillProgress = document.getElementById("backfill-progress") as HTMLEle
 
 // Cost chart elements
 const chart7DayTotal = document.getElementById("chart-7day-total") as HTMLElement;
-const costChartGrid = document.querySelector("#cost-chart-grid") as SVGGElement | null;
-const costChartArea = document.querySelector("#cost-chart-area") as SVGPathElement | null;
-const costChartLine = document.querySelector("#cost-chart-line") as SVGPathElement | null;
-const costChartDots = document.querySelector("#cost-chart-dots") as SVGGElement | null;
-const costChartXAxis = document.getElementById("cost-chart-x-axis") as HTMLElement;
-const costChartTooltip = document.getElementById("cost-chart-tooltip") as HTMLElement;
 
 // Cumulative chart elements
 const mtdTotal = document.getElementById("mtd-total") as HTMLElement;
@@ -338,6 +332,7 @@ const modelToggleTokens = document.getElementById("model-toggle-tokens") as HTML
 let modelChartMode: "cost" | "tokens" = "cost";
 let cachedStatsArray: DailyStats[] = [];
 let weeklyChartInstance: Chart | null = null;
+let costChartInstance: Chart | null = null;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -875,82 +870,89 @@ function generateSmoothPath(points: Array<{x: number; y: number}>, closed = fals
 
 // Render 7-day cost line chart
 function renderCostLineChart(statsArray: DailyStats[]): void {
-  if (!costChartLine || !costChartArea || !costChartDots || !costChartXAxis) return;
+  const canvas = document.getElementById("cost-chartjs") as HTMLCanvasElement | null;
+  if (!canvas) return;
 
-  // Calculate total and find max
   let total = 0;
-  let maxCost = 0;
-  for (const s of statsArray) {
-    total += s.totalCostUsd ?? 0;
-    if ((s.totalCostUsd ?? 0) > maxCost) maxCost = s.totalCostUsd ?? 0;
-  }
-
-  // Update total display
+  for (const s of statsArray) total += s.totalCostUsd ?? 0;
   chart7DayTotal.textContent = formatCost(total);
 
-  // If no data, show flat line
-  if (maxCost === 0) maxCost = 1;
-
-  // Add 10% padding to max
-  maxCost *= 1.1;
-
-  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const stepX = usableWidth / (statsArray.length - 1 || 1);
-
-  // Generate points
-  const points: Array<{x: number; y: number; cost: number; date: string}> = statsArray.map((s, i) => ({
-    x: CHART_PADDING.left + i * stepX,
-    y: CHART_PADDING.top + usableHeight - ((s.totalCostUsd ?? 0) / maxCost) * usableHeight,
-    cost: s.totalCostUsd ?? 0,
-    date: s.date,
-  }));
-
-  // Draw line
-  const linePath = generateSmoothPath(points);
-  costChartLine.setAttribute("d", linePath);
-
-  // Draw area
-  const areaPath = generateSmoothPath(points, true);
-  costChartArea.setAttribute("d", areaPath);
-
-  // Draw grid lines
-  if (costChartGrid) {
-    let gridHtml = "";
-    const gridLines = 4;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
-      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
-    }
-    costChartGrid.innerHTML = gridHtml;
-  }
-
-  // Draw dots
-  let dotsHtml = "";
-  for (const p of points) {
-    dotsHtml += `<circle cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cost="${p.cost}"/>`;
-  }
-  costChartDots.innerHTML = dotsHtml;
-
-  // Add hover events for dots
-  costChartDots.querySelectorAll("circle").forEach(dot => {
-    dot.addEventListener("mouseenter", (e) => {
-      const target = e.target as SVGCircleElement;
-      const date = target.dataset.date ?? "";
-      const cost = parseFloat(target.dataset.cost ?? "0");
-      showChartTooltip(costChartTooltip, target, date, cost);
-    });
-    dot.addEventListener("mouseleave", () => {
-      costChartTooltip.classList.remove("visible");
-    });
-  });
-
-  // X-axis labels
   const today = getDateKey(new Date());
-  costChartXAxis.innerHTML = points.map(p => {
-    const isToday = p.date === today;
-    return `<span class="chart-x-label ${isToday ? "active" : ""}">${getShortDayName(p.date)}</span>`;
-  }).join("");
+  const labels = statsArray.map(s => {
+    const label = getShortDayName(s.date);
+    return s.date === today ? `${label} *` : label;
+  });
+  const costData = statsArray.map(s => Math.round((s.totalCostUsd ?? 0) * 100) / 100);
+
+  const config = {
+    type: 'line' as const,
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cost',
+        data: costData,
+        borderColor: COLORS.cost,
+        backgroundColor: (ctx: { chart: Chart }) => {
+          const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+          gradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+          return gradient;
+        },
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2.5,
+        pointBackgroundColor: 'transparent',
+        pointBorderColor: COLORS.cost,
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        pointHoverBackgroundColor: COLORS.cost,
+      }],
+    },
+    options: {
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          ticks: {
+            callback: (val: number | string) => formatCost(Number(val)),
+          },
+        },
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx: { parsed: { y: number } }) => formatCost(ctx.parsed.y),
+          },
+        },
+        legend: { display: false },
+        zoom: {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: true, backgroundColor: 'rgba(255, 215, 0, 0.1)', borderColor: COLORS.cost, borderWidth: 1 },
+            mode: 'x' as const,
+          },
+          pan: {
+            enabled: true,
+            mode: 'x' as const,
+          },
+        },
+      },
+      interaction: {
+        mode: 'index' as const,
+        intersect: false,
+      },
+    },
+  };
+
+  if (costChartInstance) {
+    costChartInstance.data = config.data;
+    costChartInstance.update();
+  } else {
+    costChartInstance = new Chart(canvas, config);
+  }
 }
 
 // Render month-to-date cumulative chart
