@@ -880,7 +880,13 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
         },
         y: {
           ticks: {
-            callback: (val: number | string) => formatCost(Number(val)),
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+              if (v >= 1) return `$${Math.round(v)}`;
+              if (v > 0) return `${Math.round(v * 100)}¢`;
+              return '$0';
+            },
           },
         },
       },
@@ -1007,7 +1013,13 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
         },
         y: {
           ticks: {
-            callback: (val: number | string) => formatCost(Number(val)),
+            callback: (val: number | string) => {
+              const v = Number(val);
+              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+              if (v >= 1) return `$${Math.round(v)}`;
+              if (v > 0) return `${Math.round(v * 100)}¢`;
+              return '$0';
+            },
           },
         },
       },
@@ -1027,7 +1039,7 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
         },
         legend: {
           position: 'top' as const,
-          align: 'end' as const,
+          align: 'start' as const,
         },
         zoom: {
           zoom: {
