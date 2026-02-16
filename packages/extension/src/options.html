@@ -300,28 +300,7 @@
                 </div>
               </div>
               <div class="chart-line-container" id="cumulative-chart">
-                <svg class="chart-svg cumulative" viewBox="0 0 640 180" preserveAspectRatio="xMidYMid meet">
-                  <defs>
-                    <linearGradient id="cumulativeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.3"/>
-                      <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  <!-- Grid lines -->
-                  <g class="chart-grid" id="cumulative-chart-grid"></g>
-                  <!-- Area fill -->
-                  <path class="chart-area" id="cumulative-chart-area" fill="url(#cumulativeGradient)"/>
-                  <!-- Daily bars -->
-                  <g class="chart-bars" id="cumulative-chart-bars"></g>
-                  <!-- Line -->
-                  <path class="chart-line cumulative" id="cumulative-chart-line" stroke="#22c55e" fill="none" stroke-width="2.5"/>
-                  <!-- Projected line -->
-                  <path class="chart-line-projected" id="cumulative-chart-projected" stroke="#22c55e" stroke-dasharray="4 4" fill="none" stroke-width="1.5" opacity="0.5"/>
-                  <!-- Data points -->
-                  <g class="chart-dots" id="cumulative-chart-dots"></g>
-                </svg>
-                <div class="chart-x-axis" id="cumulative-chart-x-axis"></div>
-                <div class="chart-tooltip" id="cumulative-chart-tooltip"></div>
+                <div id="cumulative-apex-chart"></div>
               </div>
             </div>
 

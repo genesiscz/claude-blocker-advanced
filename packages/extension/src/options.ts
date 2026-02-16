@@ -310,14 +310,6 @@ const chart7DayTotal = document.getElementById("chart-7day-total") as HTMLElemen
 // Cumulative chart elements
 const mtdTotal = document.getElementById("mtd-total") as HTMLElement;
 const mtdProjected = document.getElementById("mtd-projected") as HTMLElement;
-const cumulativeChartGrid = document.querySelector("#cumulative-chart-grid") as SVGGElement | null;
-const cumulativeChartArea = document.querySelector("#cumulative-chart-area") as SVGPathElement | null;
-const cumulativeChartBars = document.querySelector("#cumulative-chart-bars") as SVGGElement | null;
-const cumulativeChartLine = document.querySelector("#cumulative-chart-line") as SVGPathElement | null;
-const cumulativeChartProjected = document.querySelector("#cumulative-chart-projected") as SVGPathElement | null;
-const cumulativeChartDots = document.querySelector("#cumulative-chart-dots") as SVGGElement | null;
-const cumulativeChartXAxis = document.getElementById("cumulative-chart-x-axis") as HTMLElement;
-const cumulativeChartTooltip = document.getElementById("cumulative-chart-tooltip") as HTMLElement;
 
 // Model donut chart elements
 const donutOpus = document.querySelector("#donut-opus") as SVGCircleElement | null;
@@ -334,6 +326,7 @@ let modelChartMode: "cost" | "tokens" = "cost";
 let cachedStatsArray: DailyStats[] = [];
 let weeklyChart: ApexCharts | null = null;
 let costLineChart: ApexCharts | null = null;
+let cumulativeChart: ApexCharts | null = null;
 
 let bypassCountdown: ReturnType<typeof setInterval> | null = null;
 let currentDomains: string[] = [];
@@ -951,9 +944,9 @@ function renderCostLineChart(statsArray: DailyStats[]): void {
 
 // Render month-to-date cumulative chart
 function renderCumulativeChart(statsArray: DailyStats[]): void {
-  if (!cumulativeChartLine || !cumulativeChartArea || !cumulativeChartDots || !cumulativeChartXAxis || !cumulativeChartBars) return;
+  const container = document.getElementById("cumulative-apex-chart");
+  if (!container) return;
 
-  // Sort by date and calculate cumulative
   const sorted = [...statsArray].sort((a, b) => a.date.localeCompare(b.date));
   let cumulative = 0;
   const cumulativeData = sorted.map(s => {
@@ -967,115 +960,116 @@ function renderCumulativeChart(statsArray: DailyStats[]): void {
   const avgPerDay = dayOfMonth > 0 ? total / dayOfMonth : 0;
   const projected = avgPerDay * daysInMonth;
 
-  // Update stats
   mtdTotal.textContent = formatCost(total);
   mtdProjected.textContent = formatCost(projected);
 
-  // Find max for scaling
-  let maxCumulative = Math.max(cumulative, projected);
-  if (maxCumulative === 0) maxCumulative = 1;
-  maxCumulative *= 1.1;
+  const categories = cumulativeData.map(s => String(parseInt(s.date.split("-")[2])));
+  const dailyData = cumulativeData.map(d => Math.round(d.daily * 100) / 100);
+  const cumulativeSeries = cumulativeData.map(d => Math.round(d.cumulative * 100) / 100);
 
-  const usableWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const usableHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const stepX = usableWidth / (cumulativeData.length - 1 || 1);
-  const barWidth = Math.min(stepX * 0.6, 30);
-
-  // Generate points
-  const points: Array<{x: number; y: number; cumulative: number; daily: number; date: string}> = cumulativeData.map((s, i) => ({
-    x: CHART_PADDING.left + i * stepX,
-    y: CHART_PADDING.top + usableHeight - (s.cumulative / maxCumulative) * usableHeight,
-    cumulative: s.cumulative,
-    daily: s.daily,
-    date: s.date,
-  }));
-
-  // Draw bars
-  let barsHtml = "";
-  const barMaxHeight = usableHeight * 0.4;
-  const maxDaily = Math.max(...cumulativeData.map(d => d.daily), 1);
-  for (const p of points) {
-    const barHeight = (p.daily / maxDaily) * barMaxHeight;
-    const barY = CHART_HEIGHT - CHART_PADDING.bottom - barHeight;
-    barsHtml += `<rect x="${p.x - barWidth / 2}" y="${barY}" width="${barWidth}" height="${barHeight}" data-date="${p.date}" data-daily="${p.daily}"/>`;
-  }
-  cumulativeChartBars.innerHTML = barsHtml;
-
-  // Draw line
-  const linePath = generateSmoothPath(points);
-  cumulativeChartLine.setAttribute("d", linePath);
-
-  // Draw area
-  const areaPath = generateSmoothPath(points, true);
-  cumulativeChartArea.setAttribute("d", areaPath);
-
-  // Draw projected line
-  if (cumulativeChartProjected && points.length > 0) {
-    const lastPoint = points[points.length - 1];
-    const projectedY = CHART_PADDING.top + usableHeight - (projected / maxCumulative) * usableHeight;
-    cumulativeChartProjected.setAttribute("d", `M ${lastPoint.x} ${lastPoint.y} L ${CHART_WIDTH - CHART_PADDING.right} ${projectedY}`);
+  // Build projected series: null for all days except last day -> projected value at month end
+  const projectedSeries: (number | null)[] = cumulativeData.map((_, i) =>
+    i === cumulativeData.length - 1 ? cumulativeSeries[i] : null
+  );
+  // Add projected end point if month has remaining days
+  if (dayOfMonth < daysInMonth) {
+    categories.push(String(daysInMonth));
+    dailyData.push(0);
+    cumulativeSeries.push(cumulativeSeries[cumulativeSeries.length - 1] ?? 0);
+    projectedSeries.push(Math.round(projected * 100) / 100);
   }
 
-  // Draw grid
-  if (cumulativeChartGrid) {
-    let gridHtml = "";
-    const gridLines = 4;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = CHART_PADDING.top + (usableHeight / gridLines) * i;
-      gridHtml += `<line x1="${CHART_PADDING.left}" y1="${y}" x2="${CHART_WIDTH - CHART_PADDING.right}" y2="${y}"/>`;
-    }
-    cumulativeChartGrid.innerHTML = gridHtml;
+  const options: ApexCharts.ApexOptions = {
+    ...getBaseChartOptions(),
+    chart: {
+      ...getBaseChartOptions().chart,
+      type: 'line',
+      height: 220,
+      toolbar: {
+        show: true,
+        tools: {
+          download: false,
+          selection: false,
+          zoom: true,
+          zoomin: true,
+          zoomout: true,
+          pan: true,
+          reset: true,
+        },
+      },
+      zoom: { enabled: true, type: 'x' },
+    },
+    series: [
+      { name: 'Daily Cost', type: 'column', data: dailyData },
+      { name: 'Cumulative', type: 'line', data: cumulativeSeries },
+      { name: 'Projected', type: 'line', data: projectedSeries as number[] },
+    ],
+    colors: [
+      'rgba(34, 197, 94, 0.4)',  // daily bars - translucent green
+      COLORS.cumulative,          // cumulative line - solid green
+      COLORS.cumulative,          // projected line - same green
+    ],
+    stroke: {
+      width: [0, 2.5, 1.5],
+      curve: 'smooth',
+      dashArray: [0, 0, 5],
+    },
+    plotOptions: {
+      bar: {
+        borderRadius: 3,
+        columnWidth: '50%',
+      },
+    },
+    fill: {
+      opacity: [0.8, 1, 0.5],
+    },
+    markers: {
+      size: [0, 4, 0],
+      colors: ['transparent', COLORS.cumulative, 'transparent'],
+      strokeColors: [COLORS.cumulative, COLORS.cumulative, COLORS.cumulative],
+      strokeWidth: 2,
+      hover: { size: 6 },
+    },
+    xaxis: {
+      ...getBaseChartOptions().xaxis,
+      categories,
+    },
+    yaxis: {
+      ...getBaseChartOptions().yaxis,
+      labels: {
+        ...(getBaseChartOptions().yaxis as ApexYAxis)?.labels,
+        formatter: (val: number) => formatCost(val),
+      },
+    },
+    tooltip: {
+      ...getBaseChartOptions().tooltip,
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: (val: number | null, opts: { seriesIndex: number }) => {
+          if (val === null || val === undefined) return '';
+          if (opts.seriesIndex === 0) return `+${formatCost(val)}`;
+          return formatCost(val);
+        },
+      },
+    },
+    legend: {
+      position: 'top',
+      horizontalAlign: 'right',
+      labels: { colors: 'rgba(255,255,255,0.7)' },
+      fontSize: '11px',
+      fontFamily: "'DM Mono', monospace",
+      markers: { size: 6, shape: 'circle' },
+    },
+    dataLabels: { enabled: false },
+  };
+
+  if (cumulativeChart) {
+    cumulativeChart.updateOptions(options, true, true);
+  } else {
+    cumulativeChart = new ApexCharts(container, options);
+    cumulativeChart.render();
   }
-
-  // Draw dots
-  let dotsHtml = "";
-  for (const p of points) {
-    dotsHtml += `<circle class="cumulative" cx="${p.x}" cy="${p.y}" r="4" data-date="${p.date}" data-cumulative="${p.cumulative}" data-daily="${p.daily}"/>`;
-  }
-  cumulativeChartDots.innerHTML = dotsHtml;
-
-  // Add hover events
-  cumulativeChartDots.querySelectorAll("circle").forEach(dot => {
-    dot.addEventListener("mouseenter", (e) => {
-      const target = e.target as SVGCircleElement;
-      const date = target.dataset.date ?? "";
-      const cumVal = parseFloat(target.dataset.cumulative ?? "0");
-      const dailyVal = parseFloat(target.dataset.daily ?? "0");
-      showCumulativeTooltip(cumulativeChartTooltip, target, date, cumVal, dailyVal);
-    });
-    dot.addEventListener("mouseleave", () => {
-      cumulativeChartTooltip.classList.remove("visible");
-    });
-  });
-
-  // X-axis labels
-  const today = getDateKey(new Date());
-  cumulativeChartXAxis.innerHTML = points.map(p => {
-    const isToday = p.date === today;
-    const dayNum = parseInt(p.date.split("-")[2]);
-    return `<span class="chart-x-label ${isToday ? "active" : ""}">${dayNum}</span>`;
-  }).join("");
-}
-
-// Show tooltip for cumulative chart
-function showCumulativeTooltip(tooltip: HTMLElement, target: SVGCircleElement, date: string, cumulative: number, daily: number): void {
-  const rect = target.getBoundingClientRect();
-  const containerRect = tooltip.parentElement?.getBoundingClientRect();
-  if (!containerRect) return;
-
-  tooltip.innerHTML = `
-    <div class="tooltip-date">${formatStatsDate(date)}</div>
-    <div class="tooltip-value cumulative">${formatCost(cumulative)}</div>
-    <div class="tooltip-daily">+${formatCost(daily)} today</div>
-  `;
-
-  const x = rect.left - containerRect.left + rect.width / 2;
-  const y = rect.top - containerRect.top - 10;
-
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
-  tooltip.style.transform = "translate(-50%, -100%)";
-  tooltip.classList.add("visible");
 }
 
 // Render model donut chart
