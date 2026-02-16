@@ -2681,7 +2681,6 @@ footer p {
 .chart-line-container {
   position: relative;
   width: 100%;
-  height: 180px;
 }
 
 
@@ -2871,4 +2870,75 @@ footer p {
   .chart-stat {
     align-items: flex-start;
   }
+}
+
+/* =====================================================
+   APEXCHARTS DARK THEME OVERRIDES
+   ===================================================== */
+
+.apexcharts-canvas {
+  background: transparent !important;
+}
+
+.apexcharts-tooltip {
+  background: rgba(17, 17, 17, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.apexcharts-tooltip-title {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-family: 'DM Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+.apexcharts-tooltip-text {
+  font-family: 'DM Mono', monospace !important;
+  font-size: 12px !important;
+}
+
+.apexcharts-toolbar {
+  top: -4px !important;
+  right: 4px !important;
+}
+
+.apexcharts-toolbar .apexcharts-zoom-icon,
+.apexcharts-toolbar .apexcharts-pan-icon,
+.apexcharts-toolbar .apexcharts-reset-icon,
+.apexcharts-toolbar .apexcharts-zoomin-icon,
+.apexcharts-toolbar .apexcharts-zoomout-icon {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.apexcharts-toolbar .apexcharts-zoom-icon:hover,
+.apexcharts-toolbar .apexcharts-pan-icon:hover,
+.apexcharts-toolbar .apexcharts-reset-icon:hover,
+.apexcharts-toolbar .apexcharts-zoomin-icon:hover,
+.apexcharts-toolbar .apexcharts-zoomout-icon:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.apexcharts-toolbar .apexcharts-zoom-icon.apexcharts-selected,
+.apexcharts-toolbar .apexcharts-pan-icon.apexcharts-selected {
+  color: #FFD700 !important;
+}
+
+.apexcharts-xaxistooltip,
+.apexcharts-yaxistooltip {
+  background: rgba(17, 17, 17, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  border-radius: 6px !important;
+  font-family: 'DM Mono', monospace !important;
+}
+
+.apexcharts-gridline {
+  stroke: rgba(255, 255, 255, 0.06) !important;
+}
+
+.apexcharts-legend-text {
+  color: rgba(255, 255, 255, 0.7) !important;
 }
