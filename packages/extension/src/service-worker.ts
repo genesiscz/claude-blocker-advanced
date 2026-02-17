@@ -1190,6 +1190,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "BROADCAST_OVERLAY_CONFIG") {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: "OVERLAY_CONFIG_UPDATED", config: message.config }).catch(() => {});
+        }
+      }
+    });
+    return false;
+  }
+
   return false;
 });
 

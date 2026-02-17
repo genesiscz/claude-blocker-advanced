@@ -398,7 +398,6 @@ function formatRelativeTime(dateString: string): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   // Check if same day
@@ -2679,6 +2678,17 @@ tabButtons.forEach(btn => {
     }
   });
 });
+
+// Hash-based tab routing — e.g. options.html#stats selects the Stats tab
+function activateTabFromHash(): void {
+  const hash = window.location.hash.replace("#", "");
+  const validTabs = ["sessions", "history", "stats", "settings", "about"];
+  if (hash && validTabs.includes(hash)) {
+    switchTab(hash);
+  }
+}
+activateTabFromHash();
+window.addEventListener("hashchange", activateTabFromHash);
 
 // Stats date picker event listeners
 document.getElementById("stats-prev-day")?.addEventListener("click", () => {
