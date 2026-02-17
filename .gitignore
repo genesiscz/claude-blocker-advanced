@@ -32,3 +32,4 @@ coverage/
 *.local
 bun.lock
 key.pem
+.worktrees/

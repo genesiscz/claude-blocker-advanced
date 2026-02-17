@@ -60,6 +60,25 @@ const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   opacity: 0.9,
 };
 
+type OverlayPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+const POSITION_ICONS: Record<OverlayPosition, string> = {
+  "top-left": "↖",
+  "top-right": "↗",
+  "bottom-left": "↙",
+  "bottom-right": "↘",
+};
+
+const POSITION_LABELS: Record<OverlayPosition, string> = {
+  "top-left": "Top Left",
+  "top-right": "Top Right",
+  "bottom-left": "Bottom Left",
+  "bottom-right": "Bottom Right",
+};
+
+// Clockwise order for menu items
+const ALL_POSITIONS: OverlayPosition[] = ["top-left", "top-right", "bottom-right", "bottom-left"];
+
 // Track current state
 let lastKnownState: PublicState | null = null;
 let shouldBeBlocked = false;
@@ -303,6 +322,109 @@ function getSessionsListPositionStyles(): string {
   return `${verticalPos} ${horizontalPos}: 0;`;
 }
 
+function getContextMenuStyles(): string {
+  const pos = overlayConfig.position;
+  const isRight = pos.includes("right");
+  const isBottom = pos.includes("bottom");
+  // Menu opens to the side to avoid overlapping the sessions list (which opens vertically)
+  const h = isRight ? "right: 100%; margin-right: 4px;" : "left: 100%; margin-left: 4px;";
+  const v = isBottom ? "bottom: 0;" : "top: 0;";
+  return `${h} ${v}`;
+}
+
+function savePosition(newPos: OverlayPosition): void {
+  overlayConfig = { ...overlayConfig, position: newPos };
+  // Persist to storage
+  chrome.storage.sync.get(["overlayConfig"], (result) => {
+    const updated = { ...(result.overlayConfig ?? {}), position: newPos };
+    chrome.storage.sync.set({ overlayConfig: updated });
+  });
+  // Re-render locally
+  removeOverlay();
+  if (lastKnownState) updateOverlay(lastKnownState);
+  // Broadcast to other tabs via service worker
+  chrome.runtime.sendMessage({ type: "BROADCAST_OVERLAY_CONFIG", config: overlayConfig });
+}
+
+function removeOverlay(): void {
+  getOverlay()?.remove();
+}
+
+function setupContextMenu(): void {
+  const shadow = getOverlay()?.shadowRoot;
+  if (!shadow) return;
+
+  const pill = shadow.getElementById("overlay-pill")!;
+  const wrapper = shadow.getElementById("pill-wrapper")!;
+  const menu = shadow.getElementById("overlay-context-menu")!;
+  if (!pill || !wrapper || !menu) return;
+
+  menu.style.cssText = `position: absolute; ${getContextMenuStyles()}`;
+
+  const otherPositions = ALL_POSITIONS.filter((p) => p !== overlayConfig.position);
+  const positionItems = otherPositions
+    .map(
+      (pos) => `
+    <button class="context-menu-item" data-move-to="${pos}">
+      <span class="menu-icon">${POSITION_ICONS[pos]}</span>
+      ${POSITION_LABELS[pos]}
+    </button>
+  `
+    )
+    .join("");
+
+  menu.innerHTML = `
+    ${positionItems}
+    <div class="context-menu-separator"></div>
+    <button class="context-menu-item" id="menu-stats-btn">
+      <span class="menu-icon">📊</span>
+      Statistics
+    </button>
+  `;
+
+  pill.addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    menu.classList.add("open");
+    wrapper.classList.add("menu-open");
+  });
+
+  function closeMenu(e: Event): void {
+    const path = e.composedPath();
+    if (!path.includes(menu) && !path.includes(pill)) {
+      menu.classList.remove("open");
+      wrapper.classList.remove("menu-open");
+    }
+  }
+  document.addEventListener("click", closeMenu);
+  shadow.addEventListener("click", closeMenu);
+
+  document.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      menu.classList.remove("open");
+      wrapper.classList.remove("menu-open");
+    }
+  });
+
+  menu.querySelectorAll<HTMLElement>("[data-move-to]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const newPos = btn.dataset.moveTo as OverlayPosition;
+      menu.classList.remove("open");
+      wrapper.classList.remove("menu-open");
+      savePosition(newPos);
+      showOverlayToast(`Moved to ${POSITION_LABELS[newPos]}`);
+    });
+  });
+
+  shadow.getElementById("menu-stats-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.remove("open");
+    wrapper.classList.remove("menu-open");
+    chrome.tabs.create({ url: chrome.runtime.getURL("options.html") + "#stats" });
+  });
+}
+
 function createOverlay(): void {
   if (getOverlay()) return;
 
@@ -352,23 +474,29 @@ function createOverlay(): void {
       .action-btn:hover svg { stroke: #fff; }
       .action-btn[data-tooltip]::before { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 5px 8px; background: #252525; border: 1px solid #444; border-radius: 5px; font-size: 10px; font-weight: 500; color: #aaa; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; margin-bottom: 5px; z-index: 1000; font-family: Arial, Helvetica, sans-serif; }
       .action-btn:hover[data-tooltip]::before { opacity: 1; }
+      .pill { user-select: none; }
+      .context-menu { display: none; position: absolute; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.5); min-width: 160px; z-index: 2; }
+      .context-menu.open { display: block; }
+      .context-menu-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: 12px; color: #999; transition: background 0.15s, color 0.15s; white-space: nowrap; border: none; background: none; width: 100%; text-align: left; font-family: Arial, Helvetica, sans-serif; box-sizing: border-box; }
+      .context-menu-item:hover { background: #252525; color: #fff; }
+      .context-menu-item .menu-icon { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
+      .context-menu-separator { height: 1px; background: #2a2a2a; margin: 4px 0; }
+      .pill-wrapper.menu-open .sessions-list { display: none !important; }
     </style>
     <div class="overlay">
-      <div class="pill-wrapper">
-        <div class="pill">
+      <div class="pill-wrapper" id="pill-wrapper">
+        <div class="pill" id="overlay-pill">
           <span class="status-dot" id="overlay-dot"></span>
           <span class="label" id="overlay-label">—</span>
         </div>
         <div class="sessions-list" id="overlay-sessions"></div>
+        <div class="context-menu" id="overlay-context-menu"></div>
       </div>
     </div>
   `;
 
   document.documentElement.appendChild(container);
-}
-
-function removeOverlay(): void {
-  getOverlay()?.remove();
+  setupContextMenu();
 }
 
 const OVERLAY_TOAST_ID = "claude-blocker-overlay-toast";
