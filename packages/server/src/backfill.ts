@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, statSy
 import path from "path";
 import { homedir } from "os";
 import type { TokenBreakdown, DailyStats } from "./types.js";
-import { calculateCost } from "./price-resolver.js";
+import { calculateCost, waitForPricing } from "./price-resolver.js";
 
 // Configuration
 const CLAUDE_PROJECTS_DIR = path.join(homedir(), ".claude", "projects");
@@ -441,6 +441,11 @@ export async function runBackfill(
   // Report scanning status
   onProgress?.(progress);
 
+  // Ensure LiteLLM pricing is loaded before calculating costs
+  // This prevents the race condition where backfill runs with empty/stale pricingCache
+  await waitForPricing();
+  console.log("[Backfill] Pricing loaded, starting transcript processing...");
+
   // Find all transcript files
   console.log("[Backfill] Scanning for transcripts...");
   const transcripts = findTranscriptFiles();
@@ -567,21 +572,32 @@ export function getDailyStats(dateKey: string): DailyStats | null {
 export function getDailyStatsRange(dateKeys: string[]): DailyStats[] {
   const stats = loadHistoricalStats();
   return dateKeys.map((key) => {
-    return (
-      stats.dailyStats[key] || {
-        date: key,
-        totalWorkingMs: 0,
-        totalWaitingMs: 0,
-        totalIdleMs: 0,
-        sessionsStarted: 0,
-        sessionsEnded: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        totalCacheCreationTokens: 0,
-        totalCacheReadTokens: 0,
-        totalCostUsd: 0,
+    const day = stats.dailyStats[key] || {
+      date: key,
+      totalWorkingMs: 0,
+      totalWaitingMs: 0,
+      totalIdleMs: 0,
+      sessionsStarted: 0,
+      sessionsEnded: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCostUsd: 0,
+    };
+
+    // Recalculate cost from model breakdown using current pricing.
+    // This self-heals stale/wrong stored costs (e.g. from wrong fallback pricing)
+    // without needing to re-run the full backfill.
+    if (day.modelBreakdown && Object.keys(day.modelBreakdown).length > 0) {
+      let recalculated = 0;
+      for (const [model, tokens] of Object.entries(day.modelBreakdown)) {
+        recalculated += calculateCost(tokens, model);
       }
-    );
+      return { ...day, totalCostUsd: recalculated };
+    }
+
+    return day;
   });
 }
 
