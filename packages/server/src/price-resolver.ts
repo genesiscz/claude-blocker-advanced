@@ -18,52 +18,12 @@ export interface ModelPricing {
   cacheRead: number; // Cost per cache read token
 }
 
-// Fallback pricing for Claude models (used until LiteLLM data loads or on failure)
-// Prices in dollars per token (not per million)
-const FALLBACK_PRICING: Record<string, ModelPricing> = {
-  // Opus 4.5: $15/M input, $75/M output, $18.75/M cache create, $1.50/M cache read
-  "claude-opus-4-5": {
-    input: 15e-6,
-    output: 75e-6,
-    cacheCreate: 18.75e-6,
-    cacheRead: 1.5e-6,
-  },
-  // Opus 4.6: same pricing tier as Opus 4.5
-  "claude-opus-4-6": {
-    input: 15e-6,
-    output: 75e-6,
-    cacheCreate: 18.75e-6,
-    cacheRead: 1.5e-6,
-  },
-  // Sonnet 4: $3/M input, $15/M output, $3.75/M cache create, $0.30/M cache read
-  "claude-sonnet-4": {
-    input: 3e-6,
-    output: 15e-6,
-    cacheCreate: 3.75e-6,
-    cacheRead: 0.3e-6,
-  },
-  // Haiku 4.5: $0.80/M input, $4/M output, $1.00/M cache create, $0.08/M cache read
-  "claude-haiku-4-5": {
-    input: 0.8e-6,
-    output: 4e-6,
-    cacheCreate: 1e-6,
-    cacheRead: 0.08e-6,
-  },
-  // Legacy Sonnet 3.5: $3/M input, $15/M output
-  "claude-sonnet-3-5": {
-    input: 3e-6,
-    output: 15e-6,
-    cacheCreate: 3.75e-6,
-    cacheRead: 0.3e-6,
-  },
-};
-
-// Default pricing to use when model is unknown (Sonnet rates)
+// Zero pricing when model unknown — prefer showing $0 over wrong inflated cost
 const DEFAULT_PRICING: ModelPricing = {
-  input: 3e-6,
-  output: 15e-6,
-  cacheCreate: 3.75e-6,
-  cacheRead: 0.3e-6,
+  input: 0,
+  output: 0,
+  cacheCreate: 0,
+  cacheRead: 0,
 };
 
 // Cache file location
@@ -72,8 +32,8 @@ const PRICING_CACHE_FILE = path.join(DATA_DIR, "pricing-cache.json");
 const LITELLM_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
-// In-memory pricing cache (loaded from LiteLLM or fallback)
-let pricingCache: Record<string, ModelPricing> = { ...FALLBACK_PRICING };
+// In-memory pricing cache (loaded from LiteLLM disk cache or fresh download)
+let pricingCache: Record<string, ModelPricing> = {};
 let pricingLoaded = false;
 let pricingLoadPromise: Promise<void> | null = null;
 
@@ -92,7 +52,7 @@ function loadCachedPricing(): boolean {
       // Use cached data if less than 24 hours old
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       if (Date.now() - cached.timestamp < ONE_DAY_MS && cached.pricing) {
-        pricingCache = { ...FALLBACK_PRICING, ...cached.pricing };
+        pricingCache = { ...cached.pricing };
         console.log(
           `[PriceResolver] Loaded ${Object.keys(cached.pricing).length} models from cache`
         );
@@ -136,21 +96,39 @@ function savePricingCache(pricing: Record<string, ModelPricing>): void {
  * Parse LiteLLM model name to normalized Claude model key
  */
 function normalizeModelKey(modelName: string): string | null {
-  // Match Claude models: claude-opus-4-5, claude-sonnet-4, claude-haiku-4-5, etc.
   const lowerName = modelName.toLowerCase();
 
+  // Opus variants — most specific first
   if (lowerName.includes("opus-4-6") || lowerName.includes("opus-4.6")) {
     return "claude-opus-4-6";
   }
-  if (lowerName.includes("opus") && lowerName.includes("4")) {
+  if (lowerName.includes("opus-4-5") || lowerName.includes("opus-4.5")) {
     return "claude-opus-4-5";
+  }
+  if (lowerName.includes("opus-4-1") || lowerName.includes("opus-4.1")) {
+    return "claude-opus-4-1";
+  }
+  if (lowerName.includes("opus") && lowerName.includes("4")) {
+    return "claude-opus-4-5"; // Generic Opus 4 → use 4.5 pricing (not 4.1 which is 3x higher)
+  }
+
+  // Sonnet variants — most specific first
+  if (lowerName.includes("sonnet-4-6") || lowerName.includes("sonnet-4.6")) {
+    return "claude-sonnet-4-6";
+  }
+  if (lowerName.includes("sonnet-4-5") || lowerName.includes("sonnet-4.5")) {
+    return "claude-sonnet-4-5";
   }
   if (lowerName.includes("sonnet") && lowerName.includes("4")) {
     return "claude-sonnet-4";
   }
+
+  // Haiku variants
   if (lowerName.includes("haiku") && lowerName.includes("4")) {
     return "claude-haiku-4-5";
   }
+
+  // Legacy
   if (lowerName.includes("sonnet") && lowerName.includes("3.5")) {
     return "claude-sonnet-3-5";
   }
@@ -224,8 +202,8 @@ async function fetchLiteLLMPricing(): Promise<void> {
     const data = (await response.json()) as Record<string, unknown>;
     const parsedPricing = parseLiteLLMPricing(data);
 
-    // Merge with fallback pricing
-    pricingCache = { ...FALLBACK_PRICING, ...parsedPricing };
+    // Use only LiteLLM pricing
+    pricingCache = { ...parsedPricing };
     pricingLoaded = true;
 
     // Save to disk cache
